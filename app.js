@@ -115,6 +115,7 @@ async function refreshTodayCount() {
 /* ---------- Télécharger XLS (depuis CSV backend) ---------- */
 /* ---------- Télécharger XLS (depuis CSV backend) ---------- */
 /* ---------- Télécharger XLS (depuis CSV backend) : force colonne C en texte ---------- */
+/* ---------- Télécharger XLS (depuis CSV backend) : force C en texte + largeur auto ---------- */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
   const to   = document.getElementById('export_to')?.value;
@@ -142,10 +143,10 @@ async function onDownloadXls() {
 
     if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
 
-    // 1) Lire le CSV en mode "brut" pour éviter la conversion automatique en nombres
+    // 1) CSV -> Workbook (sans conversion auto des nombres)
     const wb = XLSX.read(csvText, { type: 'string', raw: true, cellText: false, cellDates: false });
 
-    // 2) Renommer prudemment la première feuille en "Export"
+    // 2) Renomme prudemment la feuille -> "Export"
     const first = wb.SheetNames[0];
     if (first !== 'Export') {
       if (wb.Sheets['Export']) { delete wb.Sheets['Export']; const i = wb.SheetNames.indexOf('Export'); if (i>-1) wb.SheetNames.splice(i,1); }
@@ -156,41 +157,48 @@ async function onDownloadXls() {
     }
     const ws = wb.Sheets['Export'];
 
-    // 3) Forcer la colonne C (code_scanné) au type texte
-    //    - t='s' (string), v et w = chaîne
-    //    - z='@' (format texte Excel)
+    // 3) Force la colonne C (index 2) en TEXTE + calcule largeur auto
     const ref = ws['!ref'];
     if (ref) {
       const range = XLSX.utils.decode_range(ref);
-      // C = index 2 (A=0, B=1, C=2)
-      const colIdx = 2;
-      for (let R = range.s.r + 1; R <= range.e.r; R++) { // +1 pour sauter l'en-tête
+      const colIdx = 2; // C
+      let maxLen = 'code_scanné'.length; // tient compte de l'en-tête
+
+      for (let R = range.s.r + 1; R <= range.e.r; R++) { // +1 : saute l'en-tête
         const addr = XLSX.utils.encode_cell({ r: R, c: colIdx });
         const cell = ws[addr];
         if (!cell) continue;
         const val = (cell.v == null) ? '' : String(cell.v);
+        // force texte
         cell.t = 's';
         cell.v = val;
         cell.w = val;
         cell.z = '@';
+        // mesure pour largeur
+        if (val.length > maxLen) maxLen = val.length;
       }
-      // Optionnel : verrouiller le format texte pour toute la colonne via !cols
+
+      // Min 18ch, Max 40ch pour éviter monstrueux
+      const wch = Math.max(18, Math.min(40, maxLen + 2));
+
+      // Initialise / met à jour !cols
       const cols = ws['!cols'] || [];
-      cols[colIdx] = Object.assign({}, cols[colIdx], { z: '@' });
+      // ensure entries up to colIdx exist
+      while (cols.length <= colIdx) cols.push({});
+      cols[colIdx] = { wch, hidden: false }; // visible + largeur en caractères
       ws['!cols'] = cols;
     }
 
-    // 4) Télécharger le fichier Excel
+    // 4) Télécharge le fichier
     const filename = `inventaire_${from}_au_${to}.xlsx`;
     XLSX.writeFile(wb, filename);
 
-    setStatus('Fichier Excel téléchargé ✅ (codes conservés en texte)');
+    setStatus('Fichier Excel téléchargé ✅ (colonne C visible & élargie)');
   } catch (err) {
     console.error(err);
     setStatus('Erreur export. Vérifiez la période et réessayez.');
   }
 }
-
 
 
 /* ---------- Sélection photo -> décodage auto ---------- */
