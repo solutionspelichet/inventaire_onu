@@ -1,14 +1,14 @@
-  /* Inventaire ONU — app.js (PHOTO UNIQUEMENT, compteur en bas + export EXCEL)
- * - Icône "Scanner (photo)" -> ouvre l'appareil photo (input file caché)
+/* Inventaire ONU — app.js (PHOTO UNIQUEMENT, compteur bas de page + téléchargement XLS)
+ * - Bouton icône "Scanner (photo)" -> ouvre l'appareil photo (input file caché)
  * - Décodage auto : ZXing (multi-format) puis jsQR (fallback QR)
  * - Orientation EXIF + essais multi tailles/rotations
  * - POST x-www-form-urlencoded (no preflight CORS)
  * - Reset après succès + relance auto capture
- * - Compteur “Scans aujourd’hui” + Export Excel (à partir du CSV backend)
+ * - Compteur “Scans aujourd’hui” + Téléchargement Excel (.xlsx) depuis CSV backend
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.0.9";
+const APP_VERSION = "1.1.0";
 const AUTO_RECAPTURE = true;
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
@@ -57,14 +57,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnTest = document.getElementById('btn-test');
   if (btnTest) btnTest.addEventListener('click', onTest);
 
-  // Export (bloc placé en bas du HTML)
+  // Export XLS (bloc bas de page)
   const exportFrom = document.getElementById('export_from');
   const exportTo = document.getElementById('export_to');
   const btnXls = document.getElementById('btn-download-xls');
-  if (btnXls) btnXls.addEventListener('click', onDownloadXls);
-
+  if (exportFrom) exportFrom.value = todayISO;
   if (exportTo) exportTo.value = todayISO;
-  if (btnExport) btnExport.addEventListener('click', onExportExcel);
+  if (btnXls) btnXls.addEventListener('click', onDownloadXls);
 
   // Service Worker
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
@@ -113,8 +112,6 @@ async function refreshTodayCount() {
   if (el) el.textContent = String(todayCount);
 }
 
-/* ---------- Export EXCEL (.xlsx) depuis CSV backend ---------- */
-/* ---------- Export EXCEL (.xlsx) depuis CSV backend (compat universelle) ---------- */
 /* ---------- Télécharger XLS (depuis CSV backend) ---------- */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
@@ -128,54 +125,40 @@ async function onDownloadXls() {
     const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
     const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
 
-    // Vérifie le type de contenu (si JSON => erreur backend)
     const ct = res.headers.get('content-type') || '';
     const csvText = await res.text();
 
-    if (!res.ok) {
-      setStatus(`Erreur export (${res.status}).`);
-      return;
-    }
+    if (!res.ok) { setStatus(`Erreur export (${res.status}).`); return; }
 
-    // Si Apps Script a renvoyé du JSON (erreur), affiche le message
+    // Si Apps Script a répondu JSON (erreur), on informe
     if (ct.includes('application/json')) {
       try {
         const j = JSON.parse(csvText);
         setStatus(`Export: ${j.message || 'réponse JSON inattendue'}`);
-      } catch {
-        setStatus('Export: réponse JSON inattendue.');
-      }
+      } catch { setStatus('Export: réponse JSON inattendue.'); }
       return;
     }
 
-    // CSV vide ? (0/1 ligne)
     const nonEmpty = csvText.trim();
     const lineCount = nonEmpty ? nonEmpty.split(/\r?\n/).length : 0;
-    if (lineCount <= 1) {
-      setStatus('Aucune donnée dans la période choisie.');
-      return;
-    }
+    if (lineCount <= 1) { setStatus('Aucune donnée dans la période choisie.'); return; }
 
-    if (typeof XLSX === 'undefined') {
-      setStatus('Librairie Excel indisponible.');
-      return;
-    }
+    if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
 
-    // Conversion robuste CSV -> Workbook
-    // read() détecte le CSV et crée un workbook avec 1 feuille
+    // Conversion robuste CSV -> Workbook (compat universelle)
     const wb = XLSX.read(csvText, { type: 'string' });
     if (!wb.SheetNames || wb.SheetNames.length === 0) {
       setStatus('Conversion Excel impossible (feuille vide).');
       return;
     }
 
-    // Renomme la feuille en "Export" si besoin
-    const firstName = wb.SheetNames[0];
-    if (firstName !== 'Export') {
-      const ws = wb.Sheets[firstName];
+    // Renomme la première feuille en “Export” (optionnel)
+    const first = wb.SheetNames[0];
+    if (first !== 'Export') {
+      const ws = wb.Sheets[first];
       XLSX.utils.book_append_sheet(wb, ws, 'Export');
-      delete wb.Sheets[firstName];
-      const idx = wb.SheetNames.indexOf(firstName);
+      delete wb.Sheets[first];
+      const idx = wb.SheetNames.indexOf(first);
       if (idx > -1) wb.SheetNames.splice(idx, 1, 'Export');
     }
 
@@ -188,7 +171,6 @@ async function onDownloadXls() {
     setStatus('Erreur export. Vérifiez la période et réessayez.');
   }
 }
-
 
 /* ---------- Sélection photo -> décodage auto ---------- */
 function onPhotoPicked(ev){
