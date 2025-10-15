@@ -24,6 +24,26 @@
   --focus: #98e1c4;
 }
 
+.topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 12px 16px; border-bottom: 1px solid #222; background: var(--card);
+  position: sticky; top: 0; z-index: 10;
+}
+.brand { display:flex; align-items:center; gap:10px; }
+.logo { height:28px; width:auto; display:block; }
+h1 { font-size: 18px; margin: 0; color: var(--text); }
+
+.icon-btn {
+  background: transparent; color: var(--text);
+  border:1px solid #2a2a2a; padding:8px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center;
+}
+.icon-btn:hover { border-color:#3a3a3a; }
+.icon-btn svg { width:18px; height:18px; display:block; }
+.actions-right { display:flex; gap:10px; align-items:center; }
+
+/* Boutons & liens te re-utilisent déjà var(--accent) etc., pas besoin de changer tout */
+
+
 /* ===== Reste de tes styles existants peut rester identique ===== */
 
 * { box-sizing: border-box; }
