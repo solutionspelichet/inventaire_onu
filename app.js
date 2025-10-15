@@ -11,6 +11,43 @@ const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYG
 const APP_VERSION = "1.1.0";
 const AUTO_RECAPTURE = true;
 
+/* ===== Thème clair/sombre ===== */
+function applyTheme(theme) {
+  const root = document.documentElement;
+  root.setAttribute('data-theme', theme);
+  // meta theme-color pour la barre d'adresse mobile
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.setAttribute('name', 'theme-color');
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute('content', theme === 'light' ? '#f7f9fb' : '#101418');
+
+  // icônes bouton
+  const btn = document.getElementById('btn-theme');
+  const sun = document.getElementById('icon-sun');
+  const moon = document.getElementById('icon-moon');
+  if (btn && sun && moon) {
+    const isDark = theme !== 'light';
+    btn.setAttribute('aria-pressed', String(isDark));
+    sun.hidden = !isDark;  // soleil visible en dark (= on propose d'aller vers light)
+    moon.hidden = isDark;
+  }
+}
+function initTheme() {
+  const stored = localStorage.getItem('theme');
+  const prefers = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  applyTheme(stored || prefers || 'dark');
+}
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'light' ? 'dark' : 'light';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
+}
+
+
 let canvasEl, ctx, statusEl, flashEl, previewEl;
 let fileBlob = null;
 let todayISO = new Date().toISOString().slice(0,10);
@@ -28,6 +65,12 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+  
+    // Thème
+  initTheme();
+  const btnTheme = document.getElementById('btn-theme');
+  if (btnTheme) btnTheme.addEventListener('click', toggleTheme);
+
   canvasEl = document.getElementById('canvas');
   ctx = canvasEl.getContext('2d', { willReadFrequently: true });
   statusEl = document.getElementById('status');
