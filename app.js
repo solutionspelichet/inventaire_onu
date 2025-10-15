@@ -36,10 +36,11 @@ function applyTheme(theme) {
   }
 }
 function initTheme() {
+  // Si rien en storage, on reste en light (défaut CSS)
   const stored = localStorage.getItem('theme');
-  const prefers = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-  applyTheme(stored || prefers || 'dark');
+  applyTheme(stored || 'light');
 }
+
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') || 'dark';
   const next = current === 'light' ? 'dark' : 'light';
