@@ -31,30 +31,28 @@
   </header>
 
   <main>
-   <section class="card">
-  <h2>Scanner</h2>
-  <p class="muted">Autorisez la caméra, puis visez le code (QR / code-barres).</p>
+  <section class="card">
+  <h2>Scanner (mode photo)</h2>
+  <p class="muted">
+    Touchez “Prendre une photo”, visez le code (QR / code-barres), puis validez la photo.
+  </p>
 
   <div class="field">
-    <label for="cameraSelect">Caméra</label>
-    <select id="cameraSelect" disabled></select>
+    <label for="photoInput">Prendre une photo</label>
+    <input id="photoInput" type="file" accept="image/*" capture="environment" />
   </div>
 
-  <div id="video-wrap" class="video-wrap">
-    <video id="video" playsinline muted></video>
+  <div id="preview-wrap" class="video-wrap">
+    <img id="preview" alt="Aperçu" style="width:100%;max-height:50vh;border-radius:10px;display:none;" />
     <canvas id="canvas" class="hidden" aria-hidden="true"></canvas>
     <div id="flash" class="flash" aria-hidden="true"></div>
     <div class="controls">
-      <button id="btn-start">Démarrer la caméra</button>
-      <button id="btn-scan" disabled>Scanner (live)</button>
-      <button id="btn-photo" class="ghost" disabled>Photo (fallback)</button>
-      <button id="btn-stop" class="ghost" disabled>Stop</button>
-      <button id="btn-torch" class="ghost" disabled>Lampe</button>
-      <input id="zoom" type="range" min="1" max="1" step="0.1" value="1" style="width:120px" disabled aria-label="Zoom">
+      <button id="btn-decode" disabled>Décoder la photo</button>
     </div>
     <div id="status" class="status" role="status" aria-live="polite">Prêt.</div>
   </div>
 </section>
+
 
 
     <section class="card">
