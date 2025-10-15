@@ -1,29 +1,8 @@
-/* ===== Thèmes Pelichet (clair/sombre) ===== */
-/* Par défaut : sombre */
+/* ===== Thèmes Pelichet (clair par défaut) ===== */
 :root {
-  color-scheme: dark;
-
-  /* Palette Pelichet */
-  --brand: #1f2328;              /* anthracite (texte fort) */
-  --accent: #F58220;             /* orange Pelichet */
-  --accent-contrast: #111417;    /* texte sur bouton orange en dark */
-
-  /* Dark */
-  --bg: #121417;                 /* fond page */
-  --toolbar-bg: #171b1f;         /* topbar */
-  --card: #1a1f24;               /* cartes */
-  --text: #f5f7fa;               /* texte principal */
-  --muted: #a9b4bf;              /* texte secondaire */
-  --border: #2a3138;             /* bordures discrètes */
-  --focus: #ffd2ad;              /* halo focus accessible (orange clair) */
-  --btn-bg: #222830;             /* fond des petits boutons icône */
-  --btn-bg-hover: #2a3138;
-}
-
-:root[data-theme="light"] {
   color-scheme: light;
 
-  /* Light */
+  /* Light (défaut) */
   --bg: #f6f8fa;
   --toolbar-bg: #ffffff;
   --card: #ffffff;
@@ -34,10 +13,28 @@
   --btn-bg: #eef2f5;
   --btn-bg-hover: #e3e9ee;
 
-  /* Accent reste l’orange Pelichet */
+  /* Accent Pelichet */
   --accent: #F58220;
-  --accent-contrast: #ffffff;    /* texte sur bouton orange en light */
+  --accent-contrast: #ffffff;
 }
+
+/* Thème sombre quand data-theme="dark" */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121417;
+  --toolbar-bg: #171b1f;
+  --card: #1a1f24;
+  --text: #f5f7fa;
+  --muted: #a9b4bf;
+  --border: #2a3138;
+  --focus: #ffd2ad;
+  --btn-bg: #222830;
+  --btn-bg-hover: #2a3138;
+  --accent: #F58220;
+  --accent-contrast: #111417;
+}
+
+
 
 /* ===== Reset & base ===== */
 * { box-sizing: border-box; }
