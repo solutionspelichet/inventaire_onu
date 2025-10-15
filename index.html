@@ -1,8 +1,6 @@
 <!doctype html>
 <html lang="fr">
 <head>
-  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Inventaire ONU</title>
@@ -18,9 +16,10 @@
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css" />
 
-  <!-- Librairies de scan -->
+  <!-- Librairies nécessaires -->
   <script defer src="https://unpkg.com/@zxing/library@0.20.0"></script>
   <script defer src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <!-- App -->
   <script defer src="app.js"></script>
@@ -73,8 +72,6 @@
         <div id="status" class="status" role="status" aria-live="polite">Prêt.</div>
       </div>
     </section>
-
-    
 
     <!-- Formulaire -->
     <section class="card">
@@ -132,7 +129,7 @@
       </form>
     </section>
 
-    <!-- Stats & Export -->
+    <!-- Stats & Export (placé à la FIN) -->
     <section class="card mini">
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
         <div><strong>Scans aujourd’hui :</strong> <span id="count-today">—</span></div>
@@ -141,16 +138,14 @@
         <input id="export_from" type="date" />
         <label for="export_to">au</label>
         <input id="export_to" type="date" />
-       <button id="btn-download-xls" type="button" class="ghost">Télécharger XLS</button>
-
+        <button id="btn-download-xls" type="button" class="ghost">Télécharger XLS</button>
       </div>
-      <small class="muted">Le fichier CSV s’ouvre dans Excel.</small>
+      <small class="muted">Le fichier Excel (.xlsx) est généré localement.</small>
     </section>
-    
   </main>
 
   <footer class="foot">
-    <small>© Inventaire ONU — Dark mode</small>
+    <small>© Inventaire ONU — PWA démo • Dark mode</small>
   </footer>
 </body>
 </html>
