@@ -1,20 +1,22 @@
-/* Inventaire ONU — app.js (PHOTO UNIQUEMENT)
- * - Icône "Scanner (photo)" qui ouvre l'appareil photo (input file caché)
- * - Décodage automatique dès que la photo est validée
- * - Décodage robuste : ZXing (multi-format) puis jsQR (fallback QR)
- * - Orientation EXIF respectée + essais multi tailles/rotations
- * - Envoi vers Apps Script en x-www-form-urlencoded (évite preflight CORS)
- * - Reset complet après succès + relance automatique de la capture (avec fallback visuel)
+/* Inventaire ONU — app.js (PHOTO UNIQUEMENT + compteur + export CSV)
+ * - Icône "Scanner (photo)" → ouvre l'appareil photo (input file caché)
+ * - Décodage auto : ZXing (multi-format) puis jsQR (fallback QR)
+ * - EXIF + essais multi tailles/rotations
+ * - POST vers Apps Script en x-www-form-urlencoded (pas de preflight CORS)
+ * - Reset après succès + relance auto capture
+ * - Compteur "Scans aujourd’hui" (GET /stats) + Export CSV par dates (GET /export)
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.0.6";
-const AUTO_RECAPTURE = true; // relancer automatiquement l'appareil photo après succès
+const APP_VERSION = "1.0.7";
+const AUTO_RECAPTURE = true;
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
 let fileBlob = null;
+let todayISO = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+let todayCount = 0;
 
-// PWA install (facultatif si bouton présent)
+// PWA install (facultatif)
 let deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault(); deferredPrompt = e;
@@ -32,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
   flashEl = document.getElementById('flash');
   previewEl = document.getElementById('preview');
 
-  // Lanceur caméra: icône -> ouvre l'appareil photo
+  // Lanceur caméra
   const btnCapture = document.getElementById('btn-capture');
   const photoInput = document.getElementById('photoInput');
   if (btnCapture && photoInput) {
@@ -40,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     photoInput.addEventListener('change', onPhotoPicked);
   }
 
-  // Toggle guide QR / code-barres
+  // Guide QR / code-barres
   const btnQR = document.getElementById('guide-qr');
   const btnBC = document.getElementById('guide-barcode');
   const frame = document.getElementById('guide-frame');
@@ -64,14 +66,25 @@ document.addEventListener('DOMContentLoaded', () => {
     typeSel.addEventListener('change', () => { typeOtherWrap.hidden = typeSel.value !== 'Autre'; });
   }
   const dateInput = document.getElementById('date_mvt');
-  if (dateInput) dateInput.value = new Date().toISOString().slice(0,10);
+  if (dateInput) dateInput.value = todayISO;
   const form = document.getElementById('form');
   if (form) form.addEventListener('submit', onSubmit);
   const btnTest = document.getElementById('btn-test');
   if (btnTest) btnTest.addEventListener('click', onTest);
 
+  // Export
+  const exportFrom = document.getElementById('export_from');
+  const exportTo = document.getElementById('export_to');
+  const btnExport = document.getElementById('btn-export');
+  if (exportFrom) exportFrom.value = todayISO;
+  if (exportTo) exportTo.value = todayISO;
+  if (btnExport) btnExport.addEventListener('click', onExport);
+
   // Service Worker
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
+
+  // Charger le compteur d’aujourd’hui
+  refreshTodayCount();
 });
 
 /* ================= Helpers UI ================= */
@@ -101,6 +114,30 @@ function onCodeDetected(text){
   if (codeInput) { codeInput.value = text; codeInput.focus(); }
 }
 
+/* ===== Compteur "Scans aujourd’hui" ===== */
+async function refreshTodayCount() {
+  try {
+    const res = await fetch(`${API_BASE}?route=/stats&day=${todayISO}`, { method:'GET', mode:'cors', credentials:'omit' });
+    const data = await res.json().catch(()=> ({}));
+    if (data && data.status === 200 && data.data && typeof data.data.count === 'number') {
+      todayCount = data.data.count;
+    }
+  } catch(_) {}
+  const el = document.getElementById('count-today');
+  if (el) el.textContent = String(todayCount);
+}
+
+/* ===== Export CSV ===== */
+function onExport() {
+  const from = document.getElementById('export_from')?.value;
+  const to = document.getElementById('export_to')?.value;
+  if (!from || !to) { setStatus('Choisissez une période complète (du… au…).'); return; }
+  if (from > to) { setStatus('La date de début doit être antérieure à la date de fin.'); return; }
+  // Ouvre l’URL d’export (CSV) — le navigateur téléchargera ou affichera
+  const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  window.location.href = url;
+}
+
 /* ===== 1) Sélection photo -> décodage auto ===== */
 function onPhotoPicked(ev){
   const file = ev.target.files && ev.target.files[0];
@@ -117,17 +154,13 @@ function onPhotoPicked(ev){
   if (btnCapture) btnCapture.classList.remove('pulse');
 
   setStatus('Décodage en cours…');
-  setTimeout(decodePhoto, 0); // décodage automatique
+  setTimeout(decodePhoto, 0);
 }
 
 /* ===== 2) Décodage robuste (ZXing + jsQR + EXIF) ===== */
 async function decodePhoto(){
   if (!fileBlob) return;
-
-  // Respecte orientation EXIF
   const {bitmap, width, height} = await loadImageWithOrientation(fileBlob);
-
-  // Essais multiples (aide beaucoup IRL)
   const scales = [1.0, 0.75, 0.5];
   const rotations = [0, 90, 180, 270];
 
@@ -136,9 +169,7 @@ async function decodePhoto(){
       const targetW = Math.round(width * scale);
       const targetH = Math.round(height * scale);
       const {w, h} = sizeAfterRotation(targetW, targetH, rot);
-
-      canvasEl.width = w;
-      canvasEl.height = h;
+      canvasEl.width = w; canvasEl.height = h;
 
       const ctx2 = canvasEl.getContext('2d', { willReadFrequently: true });
       ctx2.save();
@@ -148,7 +179,6 @@ async function decodePhoto(){
       ctx2.drawImage(bitmap, -targetW/2, -targetH/2, targetW, targetH);
       ctx2.restore();
 
-      // ZXing multi-format
       try {
         const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvasEl);
         const bitmapZX = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
@@ -157,7 +187,6 @@ async function decodePhoto(){
         if (res && res.getText) { showPreviewFromCanvas(); onCodeDetected(res.getText()); return; }
       } catch (_) {}
 
-      // jsQR (QR uniquement)
       try {
         const imgData = ctx2.getImageData(0,0,canvasEl.width,canvasEl.height);
         const code = jsQR(imgData.data, imgData.width, imgData.height);
@@ -203,7 +232,14 @@ async function onSubmit(ev) {
     const data = await res.json().catch(()=> ({}));
     if (data && data.status >= 200 && data.status < 300) {
       setApiMsg('Écrit dans Google Sheets ✅', false);
-      resetFormUI(); // reset + relance auto capture
+      // Incrémente le compteur local + rafraîchit l’affichage
+      if (document.getElementById('date_mvt')?.value === todayISO) {
+        todayCount += 1; const el = document.getElementById('count-today'); if (el) el.textContent = String(todayCount);
+      } else {
+        // si la date saisie n'est pas aujourd'hui, on recharge la vraie valeur
+        refreshTodayCount();
+      }
+      resetFormUI();
     } else {
       setApiMsg(`Erreur API: ${data && data.message ? data.message : 'Inconnue'}`, true);
     }
@@ -215,32 +251,15 @@ async function onSubmit(ev) {
 
 /* ===== Reset + relance auto capture ===== */
 function resetFormUI() {
-  // 1) Reset formulaire
-  const form = document.getElementById('form');
-  if (form) form.reset();
-
-  // 2) Masquer "Autre"
-  const typeOtherWrap = document.getElementById('field-type-autre');
-  if (typeOtherWrap) typeOtherWrap.hidden = true;
-
-  // 3) Remettre la date du jour
-  const dateInput = document.getElementById('date_mvt');
-  if (dateInput) dateInput.value = new Date().toISOString().slice(0,10);
-
-  // 4) Vider aperçu + input fichier
-  const preview = document.getElementById('preview');
-  if (preview) { preview.src = ''; preview.style.display = 'none'; }
-  const photoInput = document.getElementById('photoInput');
-  if (photoInput) { photoInput.value = ''; }
-
-  // 5) Oublier le dernier blob
+  const form = document.getElementById('form'); if (form) form.reset();
+  const typeOtherWrap = document.getElementById('field-type-autre'); if (typeOtherWrap) typeOtherWrap.hidden = true;
+  const dateInput = document.getElementById('date_mvt'); if (dateInput) dateInput.value = todayISO;
+  const preview = document.getElementById('preview'); if (preview) { preview.src = ''; preview.style.display = 'none'; }
+  const photoInput = document.getElementById('photoInput'); if (photoInput) { photoInput.value = ''; }
   fileBlob = null;
-
-  // 6) Feedback UX
   setStatus('Saisie enregistrée ✅. Préparation d’un nouveau scan…');
   if (navigator.vibrate) navigator.vibrate(50);
 
-  // 7) Relance auto de la capture (si permis par le navigateur)
   if (AUTO_RECAPTURE && photoInput) {
     const btnCapture = document.getElementById('btn-capture');
     setTimeout(() => {
@@ -249,24 +268,11 @@ function resetFormUI() {
         setStatus('Appareil photo ouvert. Cadrez le code et validez la photo.');
         if (btnCapture) btnCapture.classList.remove('pulse');
       } catch (e) {
-        // Fallback : invite à toucher le bouton
         setStatus('Touchez “Scanner (photo)” pour une nouvelle prise.');
         if (btnCapture) btnCapture.classList.add('pulse');
       }
     }, 300);
   }
-}
-
-function onTest() {
-  const codeEl = document.getElementById('code');
-  const fromEl = document.getElementById('from');
-  const toEl = document.getElementById('to');
-  const typeEl = document.getElementById('type');
-  if (codeEl) codeEl.value = 'TEST-QR-123';
-  if (fromEl) fromEl.value = 'Voie Creuse';
-  if (toEl) toEl.value = 'Bibliothèque';
-  if (typeEl) { typeEl.value = 'Bureau'; typeEl.dispatchEvent(new Event('change')); }
-  setStatus('Champs de test remplis.');
 }
 
 /* ================= Helpers image / EXIF ================= */
@@ -296,12 +302,7 @@ async function loadImageWithOrientation(file) {
 }
 
 function sizeAfterRotation(w, h, deg){ return (deg % 180 === 0) ? {w, h} : {w: h, h: w}; }
-
-function showPreviewFromCanvas() {
-  if (!previewEl) return;
-  try { previewEl.src = canvasEl.toDataURL('image/png'); previewEl.style.display = 'block'; }
-  catch (_) {}
-}
+function showPreviewFromCanvas() { if (!previewEl) return; try { previewEl.src = canvasEl.toDataURL('image/png'); previewEl.style.display = 'block'; } catch (_) {} }
 
 function loadImageElement(file) {
   return new Promise((resolve, reject) => {
@@ -354,14 +355,14 @@ function drawOriented(srcBitmap, orientation) {
   const c = canvas.getContext('2d');
 
   switch (orientation) {
-    case 2: c.translate(dw, 0); c.scale(-1, 1); break;              // miroir H
-    case 3: c.translate(dw, dh); c.rotate(Math.PI); break;          // 180
-    case 4: c.translate(0, dh); c.scale(1, -1); break;              // miroir V
-    case 5: c.rotate(0.5 * Math.PI); c.scale(1, -1); break;         // miroir + 90
-    case 6: c.rotate(0.5 * Math.PI); c.translate(0, -dh); break;    // 90
-    case 7: c.rotate(1.5 * Math.PI); c.scale(1, -1); c.translate(-dw, 0); break; // miroir + 270
-    case 8: c.rotate(1.5 * Math.PI); c.translate(-dw, 0); break;    // 270
-    default: break; // 1: rien
+    case 2: c.translate(dw, 0); c.scale(-1, 1); break;
+    case 3: c.translate(dw, dh); c.rotate(Math.PI); break;
+    case 4: c.translate(0, dh); c.scale(1, -1); break;
+    case 5: c.rotate(0.5 * Math.PI); c.scale(1, -1); break;
+    case 6: c.rotate(0.5 * Math.PI); c.translate(0, -dh); break;
+    case 7: c.rotate(1.5 * Math.PI); c.scale(1, -1); c.translate(-dw, 0); break;
+    case 8: c.rotate(1.5 * Math.PI); c.translate(-dw, 0); break;
+    default: break;
   }
   c.drawImage(srcBitmap, 0, 0, sw, sh);
   return { canvas, w: dw, h: dh };
