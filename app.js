@@ -1,4 +1,4 @@
-/* Inventaire ONU — app.js (PHOTO UNIQUEMENT, compteur en bas + export EXCEL)
+  /* Inventaire ONU — app.js (PHOTO UNIQUEMENT, compteur en bas + export EXCEL)
  * - Icône "Scanner (photo)" -> ouvre l'appareil photo (input file caché)
  * - Décodage auto : ZXing (multi-format) puis jsQR (fallback QR)
  * - Orientation EXIF + essais multi tailles/rotations
@@ -60,8 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Export (bloc placé en bas du HTML)
   const exportFrom = document.getElementById('export_from');
   const exportTo = document.getElementById('export_to');
-  const btnExport = document.getElementById('btn-export');
-  if (exportFrom) exportFrom.value = todayISO;
+  const btnXls = document.getElementById('btn-download-xls');
+  if (btnXls) btnXls.addEventListener('click', onDownloadXls);
+
   if (exportTo) exportTo.value = todayISO;
   if (btnExport) btnExport.addEventListener('click', onExportExcel);
 
@@ -114,35 +115,80 @@ async function refreshTodayCount() {
 
 /* ---------- Export EXCEL (.xlsx) depuis CSV backend ---------- */
 /* ---------- Export EXCEL (.xlsx) depuis CSV backend (compat universelle) ---------- */
-async function onExportExcel() {
+/* ---------- Télécharger XLS (depuis CSV backend) ---------- */
+async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
-  const to = document.getElementById('export_to')?.value;
+  const to   = document.getElementById('export_to')?.value;
   if (!from || !to) { setStatus('Choisissez une période complète (du… au…).'); return; }
-  if (from > to) { setStatus('La date de début doit être antérieure à la date de fin.'); return; }
+  if (from > to)     { setStatus('La date de début doit être antérieure à la date de fin.'); return; }
 
   try {
     setStatus('Préparation de l’export…');
 
-    // 1) Récupère le CSV filtré
     const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
     const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
+
+    // Vérifie le type de contenu (si JSON => erreur backend)
+    const ct = res.headers.get('content-type') || '';
     const csvText = await res.text();
 
-    // 2) Convertit CSV -> classeur via XLSX.read (compat avec toutes les builds)
-    if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
-    // read() détecte le format CSV et crée un Workbook avec 1 feuille
+    if (!res.ok) {
+      setStatus(`Erreur export (${res.status}).`);
+      return;
+    }
+
+    // Si Apps Script a renvoyé du JSON (erreur), affiche le message
+    if (ct.includes('application/json')) {
+      try {
+        const j = JSON.parse(csvText);
+        setStatus(`Export: ${j.message || 'réponse JSON inattendue'}`);
+      } catch {
+        setStatus('Export: réponse JSON inattendue.');
+      }
+      return;
+    }
+
+    // CSV vide ? (0/1 ligne)
+    const nonEmpty = csvText.trim();
+    const lineCount = nonEmpty ? nonEmpty.split(/\r?\n/).length : 0;
+    if (lineCount <= 1) {
+      setStatus('Aucune donnée dans la période choisie.');
+      return;
+    }
+
+    if (typeof XLSX === 'undefined') {
+      setStatus('Librairie Excel indisponible.');
+      return;
+    }
+
+    // Conversion robuste CSV -> Workbook
+    // read() détecte le CSV et crée un workbook avec 1 feuille
     const wb = XLSX.read(csvText, { type: 'string' });
+    if (!wb.SheetNames || wb.SheetNames.length === 0) {
+      setStatus('Conversion Excel impossible (feuille vide).');
+      return;
+    }
 
-    // 3) Télécharge en .xlsx
+    // Renomme la feuille en "Export" si besoin
+    const firstName = wb.SheetNames[0];
+    if (firstName !== 'Export') {
+      const ws = wb.Sheets[firstName];
+      XLSX.utils.book_append_sheet(wb, ws, 'Export');
+      delete wb.Sheets[firstName];
+      const idx = wb.SheetNames.indexOf(firstName);
+      if (idx > -1) wb.SheetNames.splice(idx, 1, 'Export');
+    }
+
     const filename = `inventaire_${from}_au_${to}.xlsx`;
-    XLSX.writeFile(wb, filename); // bookType 'xlsx' par défaut avec writeFile
+    XLSX.writeFile(wb, filename);
 
-    setStatus('Export Excel généré ✅');
+    setStatus('Fichier Excel téléchargé ✅');
   } catch (err) {
     console.error(err);
-    setStatus('Erreur export. Réessayez.');
+    setStatus('Erreur export. Vérifiez la période et réessayez.');
   }
 }
+
 
 /* ---------- Sélection photo -> décodage auto ---------- */
 function onPhotoPicked(ev){
