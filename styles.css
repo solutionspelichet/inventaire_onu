@@ -9,6 +9,10 @@
   --err: #ef4444;
   --focus: #94c6ff;
 }
+
+.card.mini { padding:10px 12px; }
+
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
 
