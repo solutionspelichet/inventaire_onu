@@ -1,71 +1,137 @@
-/* ===== Thèmes Pelichet : variables ===== */
-/* Par défaut : dark */
+/* ===== Thèmes Pelichet (clair/sombre) ===== */
+/* Par défaut : sombre */
 :root {
   color-scheme: dark;
-  /* Pelichet-ish — ajuste si besoin */
-  --brand: #0b6e4f;          /* vert profond */
-  --brand-strong: #0a5c43;
-  --accent: #19b36a;         /* vert vif */
-  --bg: #101418;
-  --card: #161b20;
-  --text: #f1f5f9;
-  --muted: #9aa7b2;
-  --ok: #22c55e;
-  --err: #ef4444;
-  --focus: #6ec6a6;
-}
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #f7f9fb;
-  --card: #ffffff;
-  --text: #0f172a;
-  --muted: #475569;
-  --accent: #0b6e4f;         /* vert marque en clair */
-  --focus: #98e1c4;
+
+  /* Palette Pelichet */
+  --brand: #1f2328;              /* anthracite (texte fort) */
+  --accent: #F58220;             /* orange Pelichet */
+  --accent-contrast: #111417;    /* texte sur bouton orange en dark */
+
+  /* Dark */
+  --bg: #121417;                 /* fond page */
+  --toolbar-bg: #171b1f;         /* topbar */
+  --card: #1a1f24;               /* cartes */
+  --text: #f5f7fa;               /* texte principal */
+  --muted: #a9b4bf;              /* texte secondaire */
+  --border: #2a3138;             /* bordures discrètes */
+  --focus: #ffd2ad;              /* halo focus accessible (orange clair) */
+  --btn-bg: #222830;             /* fond des petits boutons icône */
+  --btn-bg-hover: #2a3138;
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Light */
+  --bg: #f6f8fa;
+  --toolbar-bg: #ffffff;
+  --card: #ffffff;
+  --text: #1f2328;
+  --muted: #525f6b;
+  --border: #d0d7de;
+  --focus: #ffb777;
+  --btn-bg: #eef2f5;
+  --btn-bg-hover: #e3e9ee;
+
+  /* Accent reste l’orange Pelichet */
+  --accent: #F58220;
+  --accent-contrast: #ffffff;    /* texte sur bouton orange en light */
+}
+
+/* ===== Reset & base ===== */
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+img { max-width: 100%; display: block; }
+
+/* ===== Topbar + marque ===== */
 .topbar {
   display:flex; align-items:center; justify-content:space-between;
-  padding: 12px 16px; border-bottom: 1px solid #222; background: var(--card);
+  padding: 12px 16px;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 10;
 }
 .brand { display:flex; align-items:center; gap:10px; }
-.logo { height:28px; width:auto; display:block; }
+.logo { height:28px; width:auto; }
 h1 { font-size: 18px; margin: 0; color: var(--text); }
 
+/* ===== Boutons ===== */
+button {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* Boutons “ghost” (bord fin) */
+.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.ghost:hover { background: var(--btn-bg-hover); }
+
+/* Bouton icône (soleil/lune) */
 .icon-btn {
-  background: transparent; color: var(--text);
-  border:1px solid #2a2a2a; padding:8px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px;
+  border-radius: 10px;
+  display: inline-flex; align-items:center; justify-content:center;
 }
-.icon-btn:hover { border-color:#3a3a3a; }
-.icon-btn svg { width:18px; height:18px; display:block; }
-.actions-right { display:flex; gap:10px; align-items:center; }
+.icon-btn:hover { background: var(--btn-bg-hover); }
+.icon-btn svg { width: 18px; height: 18px; display:block; }
 
-/* Boutons & liens te re-utilisent déjà var(--accent) etc., pas besoin de changer tout */
-
-
-/* ===== Reste de tes styles existants peut rester identique ===== */
-
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-
-.topbar {
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 12px 16px; border-bottom: 1px solid #222; background:#0b0b0b; position: sticky; top: 0; z-index: 10;
-}
-h1 { font-size: 18px; margin: 0; }
-.ghost { background: transparent; color: var(--muted); border:1px solid #2a2a2a; padding: 8px 10px; border-radius: 10px; }
-.ghost:hover { border-color:#3a3a3a; color:#ddd; }
-
+/* ===== Layout ===== */
 main { padding: 16px; max-width: 800px; margin: 0 auto; }
-.card { background: var(--card); border:1px solid #222; border-radius: 14px; padding: 14px; margin-bottom: 16px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
 .card.mini { padding: 10px 12px; }
 h2 { margin-top: 0; font-size: 18px; }
 .muted { color: var(--muted); }
 
+/* ===== Scan (photo) ===== */
+.capture-wrap { display:flex; justify-content:center; margin-bottom: 12px; }
+.capture-btn {
+  display:inline-flex; align-items:center; gap:10px;
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 16px; cursor: pointer;
+}
+.capture-btn:hover { background: var(--btn-bg-hover); }
+.capture-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.barcode-icon { width: 64px; height: 32px; display:block; }
+.capture-btn span { font-weight: 600; }
+.capture-btn.pulse {
+  animation: capture-pulse 1.2s ease-in-out infinite;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 0 rgba(245,130,32,0.4);
+}
+@keyframes capture-pulse {
+  70% { box-shadow: 0 0 0 10px rgba(245,130,32,0.0); }
+  100% { box-shadow: 0 0 0 0 rgba(245,130,32,0.0); }
+}
+
 .video-wrap { position: relative; }
 canvas.hidden { display:none; }
-
 .status { margin-top: 8px; font-size: 14px; color: var(--muted); }
 
 .flash {
@@ -74,45 +140,32 @@ canvas.hidden { display:none; }
 .flash.active { animation: flash 300ms ease-out; }
 @keyframes flash { 0%{opacity:.9} 100%{opacity:0} }
 
-.foot { padding: 24px; text-align: center; color: var(--muted); }
-
-/* Inputs */
+/* ===== Formulaire ===== */
 .field { display:flex; flex-direction:column; gap:6px; margin-bottom: 12px; }
+label { color: var(--text); }
 input, select {
-  background:#0b0b0b; color:var(--text); border:1px solid #2a2a2a; padding:10px; border-radius:10px;
+  background: var(--toolbar-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 10px;
+  border-radius: 10px;
 }
-input:focus, select:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
+input::placeholder { color: var(--muted); }
+input:focus-visible, select:focus-visible {
+  outline: 3px solid var(--focus); outline-offset: 2px;
+}
 .actions { display:flex; gap:10px; align-items:center; }
-button { background: var(--accent); border: none; color:#000; padding:10px 14px; border-radius: 10px; font-weight:600; }
-button:disabled { opacity:.5; }
-button:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
 
-/* Visually hidden input file */
+/* ===== Accessibilité visuelle ===== */
 .visually-hidden {
   position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
 }
 
-/* Bouton capture avec icône */
-.capture-wrap { display:flex; justify-content:center; margin-bottom: 12px; }
-.capture-btn {
-  display: inline-flex; align-items: center; gap: 10px;
-  background: var(--card); color: var(--text);
-  border: 1px solid #2a2a2a; border-radius: 14px;
-  padding: 12px 16px; cursor: pointer;
-}
-.capture-btn:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
-.capture-btn:hover { border-color: #3a3a3a; }
-.barcode-icon { width: 64px; height: 32px; display:block; }
-.capture-btn span { font-weight: 600; }
+/* ===== Pied de page ===== */
+.foot { padding: 24px; text-align: center; color: var(--muted); }
 
-/* Pulse d’attention si auto-click bloqué */
-.capture-btn.pulse {
-  animation: capture-pulse 1.2s ease-in-out infinite;
-  border-color: #ff3b30;
-}
-@keyframes capture-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(255,59,48,0.4); }
-  70%  { box-shadow: 0 0 0 10px rgba(255,59,48,0.0); }
-  100% { box-shadow: 0 0 0 0 rgba(255,59,48,0.0); }
-}
+/* ===== Liens, états OK/ERR (messages) ===== */
+a { color: var(--accent); }
+.ok    { color: #22c55e; }
+.error { color: #ef4444; }
