@@ -1,14 +1,31 @@
+/* ===== Thèmes Pelichet : variables ===== */
+/* Par défaut : dark */
 :root {
   color-scheme: dark;
-  --bg: #0d0d0d;
-  --card: #161616;
-  --text: #f1f1f1;
-  --muted: #b0b0b0;
-  --accent: #4aa3ff;
+  /* Pelichet-ish — ajuste si besoin */
+  --brand: #0b6e4f;          /* vert profond */
+  --brand-strong: #0a5c43;
+  --accent: #19b36a;         /* vert vif */
+  --bg: #101418;
+  --card: #161b20;
+  --text: #f1f5f9;
+  --muted: #9aa7b2;
   --ok: #22c55e;
   --err: #ef4444;
-  --focus: #94c6ff;
+  --focus: #6ec6a6;
 }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f9fb;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #475569;
+  --accent: #0b6e4f;         /* vert marque en clair */
+  --focus: #98e1c4;
+}
+
+/* ===== Reste de tes styles existants peut rester identique ===== */
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
 
