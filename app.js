@@ -113,6 +113,7 @@ async function refreshTodayCount() {
 }
 
 /* ---------- Export EXCEL (.xlsx) depuis CSV backend ---------- */
+/* ---------- Export EXCEL (.xlsx) depuis CSV backend (compat universelle) ---------- */
 async function onExportExcel() {
   const from = document.getElementById('export_from')?.value;
   const to = document.getElementById('export_to')?.value;
@@ -121,20 +122,20 @@ async function onExportExcel() {
 
   try {
     setStatus('Préparation de l’export…');
-    // 1) Récupère le CSV côté backend (filtré par dates)
+
+    // 1) Récupère le CSV filtré
     const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
     const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
     const csvText = await res.text();
 
-    // 2) Convertit CSV -> XLSX (SheetJS doit être présent via <script xlsx.full.min.js>)
+    // 2) Convertit CSV -> classeur via XLSX.read (compat avec toutes les builds)
     if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
-    const ws = XLSX.utils.csv_to_sheet(csvText);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Export');
+    // read() détecte le format CSV et crée un Workbook avec 1 feuille
+    const wb = XLSX.read(csvText, { type: 'string' });
 
-    // 3) Déclenche le téléchargement Excel
+    // 3) Télécharge en .xlsx
     const filename = `inventaire_${from}_au_${to}.xlsx`;
-    XLSX.writeFile(wb, filename);
+    XLSX.writeFile(wb, filename); // bookType 'xlsx' par défaut avec writeFile
 
     setStatus('Export Excel généré ✅');
   } catch (err) {
