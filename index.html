@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="fr">
 <head>
+  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Inventaire ONU</title>
@@ -72,19 +74,7 @@
       </div>
     </section>
 
-    <!-- Stats & Export -->
-    <section class="card mini">
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-        <div><strong>Scans aujourd’hui :</strong> <span id="count-today">—</span></div>
-        <div style="margin-left:auto"></div>
-        <label for="export_from">Du</label>
-        <input id="export_from" type="date" />
-        <label for="export_to">au</label>
-        <input id="export_to" type="date" />
-        <button id="btn-export" type="button" class="ghost">Exporter (CSV)</button>
-      </div>
-      <small class="muted">Le fichier CSV s’ouvre dans Excel.</small>
-    </section>
+    
 
     <!-- Formulaire -->
     <section class="card">
@@ -141,6 +131,21 @@
         <p id="api-msg" class="muted" aria-live="polite"></p>
       </form>
     </section>
+
+    <!-- Stats & Export -->
+    <section class="card mini">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <div><strong>Scans aujourd’hui :</strong> <span id="count-today">—</span></div>
+        <div style="margin-left:auto"></div>
+        <label for="export_from">Du</label>
+        <input id="export_from" type="date" />
+        <label for="export_to">au</label>
+        <input id="export_to" type="date" />
+        <button id="btn-export" type="button" class="ghost">Exporter (CSV)</button>
+      </div>
+      <small class="muted">Le fichier CSV s’ouvre dans Excel.</small>
+    </section>
+    
   </main>
 
   <footer class="foot">
