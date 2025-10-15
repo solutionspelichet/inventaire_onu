@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Inventaire ONU</title>
+  <meta name="description" content="PWA Inventaire ONU — scanner et enregistrer des mouvements dans Google Sheets." />
+  <meta name="theme-color" content="#111111" />
+  <meta name="robots" content="noindex,nofollow" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- ZXing (multi-format: QR + codes-barres) -->
+  <script defer src="https://unpkg.com/@zxing/library@0.20.0"></script>
+  <!-- jsQR pour fallback photo-only QR (optionnel) -->
+  <script defer src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+
+  <!-- App -->
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Inventaire ONU</h1>
+    <button id="btn-install" class="ghost" aria-label="Installer l’app (PWA)" hidden>Installer</button>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Scanner</h2>
+      <p class="muted">Autorisez la caméra, puis visez le code (QR / code-barres).</p>
+
+      <div id="video-wrap" class="video-wrap">
+        <video id="video" playsinline muted></video>
+        <canvas id="canvas" class="hidden" aria-hidden="true"></canvas>
+        <div id="flash" class="flash" aria-hidden="true"></div>
+        <div class="controls">
+          <button id="btn-start">Démarrer la caméra</button>
+          <button id="btn-scan" disabled>Scanner</button>
+          <button id="btn-photo" class="ghost" disabled>Photo (fallback)</button>
+          <button id="btn-stop" class="ghost" disabled>Stop</button>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite">Prêt.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Formulaire</h2>
+      <form id="form">
+        <div class="field">
+          <label for="code">Code scanné</label>
+          <input id="code" name="code" type="text" inputmode="text" autocomplete="off" required />
+        </div>
+
+        <div class="field">
+          <label for="from">Emplacement de départ</label>
+          <input id="from" name="from" type="text" autocomplete="off" placeholder="ex : Voie Creuse" required />
+        </div>
+
+        <div class="field">
+          <label for="to">Emplacement de destination</label>
+          <input id="to" name="to" type="text" autocomplete="off" placeholder="ex : Bibliothèque" required />
+        </div>
+
+        <div class="field">
+          <label for="type">Type de mobilier</label>
+          <select id="type" name="type" required>
+            <option value="">— Choisir —</option>
+            <option>Bureau</option>
+            <option>Chaise</option>
+            <option>Armoire</option>
+            <option>Caisson roulant</option>
+            <option>Table de réunion</option>
+            <option>Table basse</option>
+            <option>Cabine acoustique</option>
+            <option>Poste informatique</option>
+            <option>Canapé</option>
+            <option>Vestiaire</option>
+            <option value="Autre">Autre…</option>
+          </select>
+        </div>
+
+        <div class="field" id="field-type-autre" hidden>
+          <label for="type_autre">Type (autre)</label>
+          <input id="type_autre" name="type_autre" type="text" autocomplete="off" placeholder="Saisir le type" />
+        </div>
+
+        <div class="field">
+          <label for="date_mvt">Date du mouvement</label>
+          <input id="date_mvt" name="date_mvt" type="date" required />
+        </div>
+
+        <div class="actions">
+          <button type="submit">Enregistrer</button>
+          <button type="button" id="btn-test" class="ghost">Test (mock)</button>
+        </div>
+
+        <p id="api-msg" class="muted" aria-live="polite"></p>
+      </form>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <small>© Inventaire ONU — PWA démo • Dark mode</small>
+  </footer>
+</body>
+</html>
