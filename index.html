@@ -16,9 +16,8 @@
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css" />
 
-  <!-- ZXing (multi-format: QR + codes-barres) -->
+  <!-- Librairies de scan (obligatoires) -->
   <script defer src="https://unpkg.com/@zxing/library@0.20.0"></script>
-  <!-- jsQR pour fallback photo-only QR (optionnel) -->
   <script defer src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
 
   <!-- App -->
@@ -31,30 +30,65 @@
   </header>
 
   <main>
-  <section class="card">
-  <h2>Scanner (mode photo)</h2>
-  <p class="muted">
-    Touchez “Prendre une photo”, visez le code (QR / code-barres), puis validez la photo.
-  </p>
+    <!-- Cadre-guide -->
+    <section class="card">
+      <h2>Scanner (mode photo)</h2>
+      <div class="guide-wrap">
+        <div class="guide-toolbar">
+          <span class="muted">Cadre-guide</span>
+          <div class="guide-switch">
+            <button type="button" id="guide-qr" class="ghost small" aria-pressed="true">QR</button>
+            <button type="button" id="guide-barcode" class="ghost small" aria-pressed="false">Code-barres</button>
+          </div>
+        </div>
 
-  <div class="field">
-    <label for="photoInput">Prendre une photo</label>
-    <input id="photoInput" type="file" accept="image/*" capture="environment" />
-  </div>
+        <div class="guide-stage">
+          <div class="guide-frame guide-qr" id="guide-frame" aria-hidden="true">
+            <div class="guide-corners"></div>
+            <p class="guide-hint">Visez le code dans le cadre, puis touchez “Scanner (photo)”.</p>
+          </div>
+        </div>
+      </div>
 
-  <div id="preview-wrap" class="video-wrap">
-    <img id="preview" alt="Aperçu" style="width:100%;max-height:50vh;border-radius:10px;display:none;" />
-    <canvas id="canvas" class="hidden" aria-hidden="true"></canvas>
-    <div id="flash" class="flash" aria-hidden="true"></div>
-    <div class="controls">
-      <button id="btn-decode" disabled>Décoder la photo</button>
-    </div>
-    <div id="status" class="status" role="status" aria-live="polite">Prêt.</div>
-  </div>
-</section>
+      <!-- Lanceur caméra via icône -->
+      <div class="capture-wrap">
+        <button id="btn-capture" type="button" class="capture-btn" aria-label="Prendre une photo du code">
+          <!-- Icône code-barres + trait rouge -->
+          <svg viewBox="0 0 160 80" aria-hidden="true" class="barcode-icon">
+            <rect x="8"  y="12" width="6"  height="56" fill="currentColor" opacity="0.85"/>
+            <rect x="18" y="12" width="3"  height="56" fill="currentColor" opacity="0.75"/>
+            <rect x="24" y="12" width="8"  height="56" fill="currentColor"/>
+            <rect x="36" y="12" width="4"  height="56" fill="currentColor" opacity="0.7"/>
+            <rect x="44" y="12" width="10" height="56" fill="currentColor"/>
+            <rect x="58" y="12" width="3"  height="56" fill="currentColor" opacity="0.7"/>
+            <rect x="64" y="12" width="7"  height="56" fill="currentColor"/>
+            <rect x="75" y="12" width="4"  height="56" fill="currentColor" opacity="0.7"/>
+            <rect x="82" y="12" width="9"  height="56" fill="currentColor"/>
+            <rect x="95" y="12" width="3"  height="56" fill="currentColor" opacity="0.7"/>
+            <rect x="100" y="12" width="6" height="56" fill="currentColor"/>
+            <rect x="110" y="12" width="4" height="56" fill="currentColor" opacity="0.7"/>
+            <rect x="118" y="12" width="10" height="56" fill="currentColor"/>
+            <rect x="132" y="12" width="4" height="56" fill="currentColor" opacity="0.7"/>
+            <!-- trait rouge de visée -->
+            <rect x="0" y="38" width="160" height="4" fill="#ff3b30"/>
+          </svg>
+          <span>Scanner (photo)</span>
+        </button>
 
+        <!-- input fichier masqué (ouvre l’appareil photo) -->
+        <input id="photoInput" type="file" accept="image/*" capture="environment" class="visually-hidden" />
+      </div>
 
+      <!-- Aperçu + canvas -->
+      <div id="preview-wrap" class="video-wrap">
+        <img id="preview" alt="Aperçu" style="display:none;max-width:100%;height:auto;border-radius:10px;" />
+        <canvas id="canvas" class="hidden" aria-hidden="true"></canvas>
+        <div id="flash" class="flash" aria-hidden="true"></div>
+        <div id="status" class="status" role="status" aria-live="polite">Prêt.</div>
+      </div>
+    </section>
 
+    <!-- Formulaire -->
     <section class="card">
       <h2>Formulaire</h2>
       <form id="form">
