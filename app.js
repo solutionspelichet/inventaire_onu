@@ -1,15 +1,14 @@
-/* Inventaire ONU — app.js (PHOTO UNIQUEMENT, sans cadre-guide)
+/* Inventaire ONU — app.js (PHOTO UNIQUEMENT, compteur en bas + export EXCEL)
  * - Icône "Scanner (photo)" -> ouvre l'appareil photo (input file caché)
- * - Décodage automatique dès que la photo est validée
- * - Décodage robuste : ZXing (multi-format) puis jsQR (fallback QR)
+ * - Décodage auto : ZXing (multi-format) puis jsQR (fallback QR)
  * - Orientation EXIF + essais multi tailles/rotations
  * - POST x-www-form-urlencoded (no preflight CORS)
  * - Reset après succès + relance auto capture
- * - Compteur “Scans aujourd’hui” + Export CSV (dates)
+ * - Compteur “Scans aujourd’hui” + Export Excel (à partir du CSV backend)
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.0.8";
+const APP_VERSION = "1.0.9";
 const AUTO_RECAPTURE = true;
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
@@ -47,27 +46,29 @@ document.addEventListener('DOMContentLoaded', () => {
   const typeSel = document.getElementById('type');
   const typeOtherWrap = document.getElementById('field-type-autre');
   if (typeSel && typeOtherWrap) {
-    typeSel.addEventListener('change', () => { typeOtherWrap.hidden = typeSel.value !== 'Autre'; });
+    typeSel.addEventListener('change', () => { typeOtherWrap.hidden = (typeSel.value !== 'Autre'); });
   }
   const dateInput = document.getElementById('date_mvt');
   if (dateInput) dateInput.value = todayISO;
+
   const form = document.getElementById('form');
   if (form) form.addEventListener('submit', onSubmit);
+
   const btnTest = document.getElementById('btn-test');
   if (btnTest) btnTest.addEventListener('click', onTest);
 
-  // Export
+  // Export (bloc placé en bas du HTML)
   const exportFrom = document.getElementById('export_from');
   const exportTo = document.getElementById('export_to');
   const btnExport = document.getElementById('btn-export');
   if (exportFrom) exportFrom.value = todayISO;
   if (exportTo) exportTo.value = todayISO;
-  if (btnExport) btnExport.addEventListener('click', onExport);
+  if (btnExport) btnExport.addEventListener('click', onExportExcel);
 
   // Service Worker
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 
-  // Charger le compteur du jour
+  // Compteur du jour
   refreshTodayCount();
 });
 
@@ -111,14 +112,35 @@ async function refreshTodayCount() {
   if (el) el.textContent = String(todayCount);
 }
 
-/* ---------- Export CSV ---------- */
-function onExport() {
+/* ---------- Export EXCEL (.xlsx) depuis CSV backend ---------- */
+async function onExportExcel() {
   const from = document.getElementById('export_from')?.value;
   const to = document.getElementById('export_to')?.value;
   if (!from || !to) { setStatus('Choisissez une période complète (du… au…).'); return; }
   if (from > to) { setStatus('La date de début doit être antérieure à la date de fin.'); return; }
-  const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-  window.location.href = url;
+
+  try {
+    setStatus('Préparation de l’export…');
+    // 1) Récupère le CSV côté backend (filtré par dates)
+    const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
+    const csvText = await res.text();
+
+    // 2) Convertit CSV -> XLSX (SheetJS doit être présent via <script xlsx.full.min.js>)
+    if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
+    const ws = XLSX.utils.csv_to_sheet(csvText);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Export');
+
+    // 3) Déclenche le téléchargement Excel
+    const filename = `inventaire_${from}_au_${to}.xlsx`;
+    XLSX.writeFile(wb, filename);
+
+    setStatus('Export Excel généré ✅');
+  } catch (err) {
+    console.error(err);
+    setStatus('Erreur export. Réessayez.');
+  }
 }
 
 /* ---------- Sélection photo -> décodage auto ---------- */
@@ -255,7 +277,8 @@ function resetFormUI() {
     }, 300);
   }
 }
-// Remplit le formulaire avec des valeurs de test
+
+/* ---------- Bouton Test (mock) ---------- */
 function onTest() {
   const codeEl = document.getElementById('code');
   const fromEl = document.getElementById('from');
@@ -266,11 +289,8 @@ function onTest() {
   if (codeEl) codeEl.value = 'TEST-QR-123';
   if (fromEl) fromEl.value = 'Voie Creuse';
   if (toEl) toEl.value = 'Bibliothèque';
-  if (typeEl) { 
-    typeEl.value = 'Bureau'; 
-    typeEl.dispatchEvent(new Event('change')); 
-  }
-  if (dateEl) dateEl.value = (typeof todayISO === 'string' ? todayISO : new Date().toISOString().slice(0,10));
+  if (typeEl) { typeEl.value = 'Bureau'; typeEl.dispatchEvent(new Event('change')); }
+  if (dateEl) dateEl.value = todayISO;
 
   setStatus('Champs de test remplis. Appuyez sur “Enregistrer”.');
 }
