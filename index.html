@@ -26,10 +26,22 @@
 </head>
 <body>
   <header class="topbar">
+  <div class="brand">
+    <img src="assets/pelichet-logo.svg" alt="Pelichet" class="logo" />
     <h1>Inventaire ONU</h1>
-    <button id="btn-install" class="ghost" aria-label="Installer l’app (PWA)" hidden>Installer</button>
-  </header>
+  </div>
 
+  <div class="actions-right">
+    <button id="btn-install" class="ghost" aria-label="Installer l’app (PWA)" hidden>Installer</button>
+
+    <!-- Bouton thème -->
+    <button id="btn-theme" class="icon-btn" aria-label="Basculer clair/sombre" title="Thème clair/sombre" aria-pressed="false">
+      <!-- icône soleil/lune simple -->
+      <svg id="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4V2m0 20v-2M4 12H2m20 0h-2M5.64 5.64 4.22 4.22m15.56 15.56-1.42-1.42M5.64 18.36 4.22 19.78m15.56-15.56-1.42 1.42M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z" fill="currentColor"/></svg>
+      <svg id="icon-moon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" fill="currentColor"/></svg>
+    </button>
+  </div>
+</header>
   <main>
     <!-- SCAN : uniquement l’icône bouton -->
     <section class="card">
