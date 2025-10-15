@@ -15,6 +15,16 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png" />
 <link rel="icon" href="icons/favicon.ico" />
 
+  <script>
+  (function() {
+    try {
+      var t = localStorage.getItem('theme'); // "light" | "dark" | null
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      // sinon, on ne met rien -> light par défaut grâce au CSS
+    } catch(_) {}
+  })();
+</script>
+
 
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css" />
