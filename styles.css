@@ -9,10 +9,6 @@
   --err: #ef4444;
   --focus: #94c6ff;
 }
-
-.card.mini { padding:10px 12px; }
-
-
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
 
@@ -26,6 +22,7 @@ h1 { font-size: 18px; margin: 0; }
 
 main { padding: 16px; max-width: 800px; margin: 0 auto; }
 .card { background: var(--card); border:1px solid #222; border-radius: 14px; padding: 14px; margin-bottom: 16px; }
+.card.mini { padding: 10px 12px; }
 h2 { margin-top: 0; font-size: 18px; }
 .muted { color: var(--muted); }
 
@@ -81,54 +78,4 @@ button:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
   0%   { box-shadow: 0 0 0 0 rgba(255,59,48,0.4); }
   70%  { box-shadow: 0 0 0 10px rgba(255,59,48,0.0); }
   100% { box-shadow: 0 0 0 0 rgba(255,59,48,0.0); }
-}
-
-/* ----- Cadre-guide ----- */
-.guide-wrap { margin-bottom: 12px; }
-.guide-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-.guide-switch .small { padding:6px 10px; border-radius:8px; font-size: 12px; }
-.guide-switch .small[aria-pressed="true"] { border-color: var(--focus); color:#fff; }
-
-.guide-stage {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #0a0a0a;
-  border: 1px solid #222;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.guide-frame {
-  position: absolute; inset: 0;
-  display: grid; place-items: center;
-  pointer-events: none;
-}
-.guide-frame .guide-corners {
-  position: relative;
-  width: min(60vmin, 80%);
-  height: min(60vmin, 80%);
-  border: 2px dashed rgba(255,255,255,.5);
-  border-radius: 12px;
-  box-shadow: 0 0 0 9999px rgba(0,0,0,.55); /* masque en dehors du cadre */
-}
-.guide-frame.guide-qr .guide-corners { aspect-ratio: 1 / 1; }
-.guide-frame.guide-barcode .guide-corners {
-  width: min(80vmin, 88%);
-  height: min(36vmin, 48%);
-  aspect-ratio: 3.5 / 1;
-  border-radius: 10px;
-}
-.guide-frame .guide-corners { animation: guide-pulse 1.5s ease-in-out infinite; }
-@keyframes guide-pulse {
-  0%,100% { border-color: rgba(255,255,255,.45); }
-  50% { border-color: rgba(255,255,255,.2); }
-}
-.guide-hint {
-  position: absolute;
-  bottom: 8px; left: 50%; transform: translateX(-50%);
-  margin: 0; padding: 4px 8px;
-  font-size: 12px; color: var(--muted);
-  background: rgba(0,0,0,.35);
-  border: 1px solid #222; border-radius: 8px;
 }
