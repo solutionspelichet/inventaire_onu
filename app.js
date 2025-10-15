@@ -1,17 +1,20 @@
-/* Inventaire ONU — app.js (PHOTO UNIQUEMENT, icône déclenchement + décodage auto)
- * - <input type="file" accept="image/*" capture="environment"> caché derrière une icône
- * - Décodage image : ZXing (multi-format) puis jsQR (fallback QR)
- * - Orientation EXIF respectée, essais de tailles/rotations
- * - Envoi backend Apps Script en x-www-form-urlencoded (évite le preflight CORS)
+/* Inventaire ONU — app.js (PHOTO UNIQUEMENT)
+ * - Icône "Scanner (photo)" qui ouvre l'appareil photo (input file caché)
+ * - Décodage automatique dès que la photo est validée
+ * - Décodage robuste : ZXing (multi-format) puis jsQR (fallback QR)
+ * - Orientation EXIF respectée + essais multi tailles/rotations
+ * - Envoi vers Apps Script en x-www-form-urlencoded (évite preflight CORS)
+ * - Reset complet après succès + relance automatique de la capture (avec fallback visuel)
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.0.5";
+const APP_VERSION = "1.0.6";
+const AUTO_RECAPTURE = true; // relancer automatiquement l'appareil photo après succès
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
 let fileBlob = null;
 
-// PWA install (optionnel si tu ajoutes un bouton plus tard)
+// PWA install (facultatif si bouton présent)
 let deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault(); deferredPrompt = e;
@@ -45,10 +48,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btnQR.addEventListener('click', () => {
       btnQR.setAttribute('aria-pressed','true'); btnBC.setAttribute('aria-pressed','false');
       frame.classList.add('guide-qr'); frame.classList.remove('guide-barcode');
+      setStatus('Mode guide : QR. Visez le code et touchez “Scanner (photo)”.');
     });
     btnBC.addEventListener('click', () => {
       btnBC.setAttribute('aria-pressed','true'); btnQR.setAttribute('aria-pressed','false');
       frame.classList.add('guide-barcode'); frame.classList.remove('guide-qr');
+      setStatus('Mode guide : Code-barres. Visez le code et touchez “Scanner (photo)”.');
     });
   }
 
@@ -69,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 });
 
-/* ------- UI helpers ------- */
+/* ================= Helpers UI ================= */
 function setStatus(msg){ if (statusEl) statusEl.textContent = msg; }
 function setApiMsg(msg, isError=false) {
   const el = document.getElementById('api-msg');
@@ -96,7 +101,7 @@ function onCodeDetected(text){
   if (codeInput) { codeInput.value = text; codeInput.focus(); }
 }
 
-/* ------- 1) Sélection photo -> décodage auto ------- */
+/* ===== 1) Sélection photo -> décodage auto ===== */
 function onPhotoPicked(ev){
   const file = ev.target.files && ev.target.files[0];
   if (!file) {
@@ -106,17 +111,23 @@ function onPhotoPicked(ev){
   fileBlob = file;
   const url = URL.createObjectURL(file);
   if (previewEl) { previewEl.src = url; previewEl.style.display = 'block'; }
+
+  // Retire la pulsation du bouton (si présente)
+  const btnCapture = document.getElementById('btn-capture');
+  if (btnCapture) btnCapture.classList.remove('pulse');
+
   setStatus('Décodage en cours…');
   setTimeout(decodePhoto, 0); // décodage automatique
 }
 
-/* ------- 2) Décodage robuste ------- */
+/* ===== 2) Décodage robuste (ZXing + jsQR + EXIF) ===== */
 async function decodePhoto(){
   if (!fileBlob) return;
 
-  // Orientation respectée
+  // Respecte orientation EXIF
   const {bitmap, width, height} = await loadImageWithOrientation(fileBlob);
 
+  // Essais multiples (aide beaucoup IRL)
   const scales = [1.0, 0.75, 0.5];
   const rotations = [0, 90, 180, 270];
 
@@ -137,7 +148,7 @@ async function decodePhoto(){
       ctx2.drawImage(bitmap, -targetW/2, -targetH/2, targetW, targetH);
       ctx2.restore();
 
-      // ZXing (multi-format)
+      // ZXing multi-format
       try {
         const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvasEl);
         const bitmapZX = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
@@ -159,7 +170,7 @@ async function decodePhoto(){
   setStatus('Aucun code détecté. Reprenez la photo (plus net, plus proche, meilleure lumière).');
 }
 
-/* ------- 3) Envoi backend (x-www-form-urlencoded) ------- */
+/* ===== 3) Envoi backend (x-www-form-urlencoded) ===== */
 async function onSubmit(ev) {
   ev.preventDefault();
   const code = (document.getElementById('code')?.value || '').trim();
@@ -192,13 +203,57 @@ async function onSubmit(ev) {
     const data = await res.json().catch(()=> ({}));
     if (data && data.status >= 200 && data.status < 300) {
       setApiMsg('Écrit dans Google Sheets ✅', false);
-      const codeInput = document.getElementById('code'); if (codeInput) codeInput.value = '';
+      resetFormUI(); // reset + relance auto capture
     } else {
       setApiMsg(`Erreur API: ${data && data.message ? data.message : 'Inconnue'}`, true);
     }
   } catch (err) {
     console.error(err);
     setApiMsg('Erreur réseau/API. Vérifiez la Web App.', true);
+  }
+}
+
+/* ===== Reset + relance auto capture ===== */
+function resetFormUI() {
+  // 1) Reset formulaire
+  const form = document.getElementById('form');
+  if (form) form.reset();
+
+  // 2) Masquer "Autre"
+  const typeOtherWrap = document.getElementById('field-type-autre');
+  if (typeOtherWrap) typeOtherWrap.hidden = true;
+
+  // 3) Remettre la date du jour
+  const dateInput = document.getElementById('date_mvt');
+  if (dateInput) dateInput.value = new Date().toISOString().slice(0,10);
+
+  // 4) Vider aperçu + input fichier
+  const preview = document.getElementById('preview');
+  if (preview) { preview.src = ''; preview.style.display = 'none'; }
+  const photoInput = document.getElementById('photoInput');
+  if (photoInput) { photoInput.value = ''; }
+
+  // 5) Oublier le dernier blob
+  fileBlob = null;
+
+  // 6) Feedback UX
+  setStatus('Saisie enregistrée ✅. Préparation d’un nouveau scan…');
+  if (navigator.vibrate) navigator.vibrate(50);
+
+  // 7) Relance auto de la capture (si permis par le navigateur)
+  if (AUTO_RECAPTURE && photoInput) {
+    const btnCapture = document.getElementById('btn-capture');
+    setTimeout(() => {
+      try {
+        photoInput.click();
+        setStatus('Appareil photo ouvert. Cadrez le code et validez la photo.');
+        if (btnCapture) btnCapture.classList.remove('pulse');
+      } catch (e) {
+        // Fallback : invite à toucher le bouton
+        setStatus('Touchez “Scanner (photo)” pour une nouvelle prise.');
+        if (btnCapture) btnCapture.classList.add('pulse');
+      }
+    }, 300);
   }
 }
 
@@ -214,7 +269,7 @@ function onTest() {
   setStatus('Champs de test remplis.');
 }
 
-/* ------- Helpers image / EXIF ------- */
+/* ================= Helpers image / EXIF ================= */
 async function loadImageWithOrientation(file) {
   if ('createImageBitmap' in window) {
     try {
