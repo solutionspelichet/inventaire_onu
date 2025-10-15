@@ -1,21 +1,21 @@
-/* PWA Inventaire ONU — app.js (fix robuste)
- * Améliorations:
- * - Détection et usage prioritaire de l'API native BarcodeDetector (si dispo)
- * - ZXing en live (video) sinon
- * - Fallback photo avec ZXing SUR IMAGE (QR + codes-barres), et jsQR en dernier recours
- * - Sélecteur de caméra (arrière par défaut), lampe/zoom quand supporté
+/* PWA Inventaire ONU — app.js (Vanilla JS, CORS simple)
+ * - URL Apps Script: fournie ci-dessous (API_BASE)
+ * - Pas d'en-têtes custom ni JSON → évite le preflight CORS
+ * - Décodeur: BarcodeDetector natif si dispo, sinon ZXing en live, sinon fallback photo (ZXing sur image puis jsQR)
+ * - UI: sélecteur caméra, lampe, zoom, feedback (flash/bip/vibration)
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.2";
 
 let videoEl, canvasEl, ctx, statusEl, flashEl;
 let stream = null;
 let scanning = false;
-let barcodeDetector = null;     // API native si dispo
-let zxingReader = null;         // ZXing live
-let deviceId = null;            // caméra choisie
-let track = null;               // MediaStreamTrack vidéo courant
+let barcodeDetector = null;
+let zxingReader = null;
+let zxingControls = null;
+let deviceId = null;
+let track = null;
 let torchOn = false;
 let deferredPrompt = null;
 
@@ -43,17 +43,17 @@ document.addEventListener('DOMContentLoaded', () => {
   statusEl = document.getElementById('status');
   ctx = canvasEl.getContext('2d', { willReadFrequently: true });
 
+  // Boutons camera
   document.getElementById('btn-start').addEventListener('click', startCamera);
   document.getElementById('btn-scan').addEventListener('click', startLiveScan);
   document.getElementById('btn-photo').addEventListener('click', photoFallback);
   document.getElementById('btn-stop').addEventListener('click', stopCamera);
   document.getElementById('btn-torch').addEventListener('click', toggleTorch);
   document.getElementById('zoom').addEventListener('input', onZoom);
-
   const camSel = document.getElementById('cameraSelect');
   camSel.addEventListener('change', () => {
     deviceId = camSel.value || null;
-    if (stream) restartCamera(); // bascule hot-swap
+    if (stream) restartCamera();
   });
 
   // Formulaire
@@ -66,29 +66,24 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('form').addEventListener('submit', onSubmit);
   document.getElementById('btn-test').addEventListener('click', onTest);
 
-  // Service worker
+  // SW
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js');
   }
 
-  // BarcodeDetector (natif) si dispo
+  // Décodeur natif si dispo
   if ('BarcodeDetector' in window) {
     try {
-      // types: 'qr_code','ean_13','ean_8','code_128','code_39','upc_a','upc_e', etc.
-      barcodeDetector = new BarcodeDetector({ formats: ['qr_code','ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf','codabar','data_matrix','pdf417','aztec'] });
-      console.log('BarcodeDetector prêt.');
-    } catch (e) {
-      console.warn('BarcodeDetector init error (on continuera avec ZXing):', e);
-      barcodeDetector = null;
-    }
+      barcodeDetector = new BarcodeDetector({
+        formats: ['qr_code','ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf','codabar','data_matrix','pdf417','aztec']
+      });
+    } catch (e) { barcodeDetector = null; }
   }
 
-  // Permission “pré-demande” (iOS aime bien un geste utilisateur avant play)
-  document.body.addEventListener('touchstart', noopOnce, { once:true });
-  document.body.addEventListener('click', noopOnce, { once:true });
+  // iOS: un geste débloque l’audio/lecture inline
+  document.body.addEventListener('touchstart', ()=>{}, { once:true });
+  document.body.addEventListener('click', ()=>{}, { once:true });
 });
-
-function noopOnce(){}
 
 // ---------- Helpers UI ----------
 function setStatus(msg){ statusEl.textContent = msg; }
@@ -98,9 +93,7 @@ function setApiMsg(msg, isError=false) {
   el.style.color = isError ? 'var(--err)' : 'var(--ok)';
 }
 function vibrate(){ if (navigator.vibrate) navigator.vibrate(200); }
-function flash(){
-  flashEl.classList.remove('active'); void flashEl.offsetWidth; flashEl.classList.add('active');
-}
+function flash(){ flashEl.classList.remove('active'); void flashEl.offsetWidth; flashEl.classList.add('active'); }
 function beep(){
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -137,29 +130,24 @@ async function listCameras() {
     });
     if (vids.length) {
       sel.disabled = false;
-      // Préfère l’arrière si libellé contient back/environment
       const back = vids.find(v => /back|arrière|environment/i.test(v.label));
       deviceId = (back ? back.deviceId : vids[0].deviceId);
       sel.value = deviceId;
     }
-  } catch (e) {
-    console.warn('enumerateDevices error (permissions non accordées?)', e);
-  }
+  } catch (e) { /* ignore */ }
 }
 
 async function startCamera() {
   try {
     setStatus('Ouverture de la caméra…');
-    await listCameras(); // met deviceId si possible
-
+    await listCameras();
     const constraints = {
       video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } },
       audio: false
     };
-
     stream = await navigator.mediaDevices.getUserMedia(constraints);
-    videoEl.setAttribute('playsinline',''); // iOS inline
-    videoEl.muted = true;                   // iOS autoplay
+    videoEl.setAttribute('playsinline','');
+    videoEl.muted = true;
     videoEl.srcObject = stream;
     await videoEl.play();
 
@@ -169,16 +157,11 @@ async function startCamera() {
     document.getElementById('btn-photo').disabled = false;
     document.getElementById('btn-stop').disabled = false;
 
-    // Torch support?
+    // Torch/Zoom si supportés
     const torchBtn = document.getElementById('btn-torch');
     const caps = track.getCapabilities ? track.getCapabilities() : {};
-    if (caps.torch) {
-      torchBtn.disabled = false;
-    } else {
-      torchBtn.disabled = true;
-    }
+    torchBtn.disabled = !caps.torch;
 
-    // Zoom support?
     const zoomInput = document.getElementById('zoom');
     if (caps.zoom) {
       zoomInput.min = caps.zoom.min || 1;
@@ -198,21 +181,14 @@ async function startCamera() {
   }
 }
 
-async function restartCamera(){
-  await stopCamera();
-  return startCamera();
-}
+async function restartCamera(){ await stopCamera(); return startCamera(); }
 
 async function stopCamera() {
   try {
     scanning = false;
-    if (zxingReader && zxingReaderReset) {
-      zxingReaderReset();
-    }
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-      stream = null;
-    }
+    if (zxingControls) { try { zxingControls.stop(); } catch(_) {} zxingControls = null; }
+    zxingReader = null;
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     track = null;
     videoEl.srcObject = null;
     document.getElementById('btn-scan').disabled = true;
@@ -224,43 +200,29 @@ async function stopCamera() {
   } catch(_) {}
 }
 
-// ---------- Torch & Zoom ----------
 async function toggleTorch(){
   if (!track) return;
   const caps = track.getCapabilities ? track.getCapabilities() : {};
   if (!caps.torch) return;
   torchOn = !torchOn;
-  try {
-    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-  } catch(e) {
-    torchOn = !torchOn;
-    console.warn('Torch non appliqué', e);
-  }
+  try { await track.applyConstraints({ advanced: [{ torch: torchOn }] }); }
+  catch(e){ torchOn = !torchOn; }
 }
 async function onZoom(e){
   if (!track) return;
   const val = Number(e.target.value);
-  try {
-    await track.applyConstraints({ advanced: [{ zoom: val }] });
-  } catch(err){
-    console.warn('Zoom non appliqué', err);
-  }
+  try { await track.applyConstraints({ advanced: [{ zoom: val }] }); }
+  catch(err){ /* ignore */ }
 }
 
 // ---------- Live scan ----------
-let zxingControls = null;
-function zxingReaderReset(){
-  try { if (zxingControls) zxingControls.stop(); } catch(_) {}
-  zxingControls = null;
-  zxingReader = null;
-}
 async function startLiveScan() {
   if (!stream) return alert("Démarrez la caméra d’abord.");
   if (scanning) return;
   scanning = true;
   setStatus('Scan en cours… Visez le code.');
 
-  // 1) Essaye l’API native (si dispo) via boucle requestAnimationFrame
+  // 1) BarcodeDetector natif
   if (barcodeDetector) {
     const loop = async () => {
       if (!scanning || !stream) return;
@@ -272,9 +234,7 @@ async function startLiveScan() {
           return;
         }
       } catch(e) {
-        console.warn('BarcodeDetector error, bascule ZXing', e);
-        // continue → on passera à ZXing
-        barcodeDetector = null;
+        barcodeDetector = null; // bascule sur ZXing
       }
       requestAnimationFrame(loop);
     };
@@ -282,7 +242,7 @@ async function startLiveScan() {
     return;
   }
 
-  // 2) Sinon, ZXing live
+  // 2) ZXing live
   try {
     const codeReader = ZXing.BrowserMultiFormatReader;
     zxingReader = new codeReader();
@@ -300,45 +260,33 @@ async function startLiveScan() {
   }
 }
 
-// ---------- Fallback photo (image → ZXing, puis jsQR) ----------
+// ---------- Fallback photo (image → ZXing puis jsQR) ----------
 async function photoFallback() {
   if (!stream) return alert("Démarrez la caméra d’abord.");
   canvasEl.width = videoEl.videoWidth;
   canvasEl.height = videoEl.videoHeight;
   ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
 
-  // 2a) ZXing sur image (multi-format)
+  // ZXing sur image
   try {
     const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvasEl);
     const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
-    const hints = new Map(); // on peut définir des formats cibles si voulu
     const reader = new ZXing.MultiFormatReader();
-    reader.setHints(hints);
     const res = reader.decode(bitmap);
-    if (res && res.getText) {
-      onCodeDetected(res.getText());
-      return;
-    }
-  } catch(_) {
-    // ignore, on tente jsQR
-  }
+    if (res && res.getText) { onCodeDetected(res.getText()); return; }
+  } catch(_) { /* on tente jsQR */ }
 
-  // 2b) jsQR (QR uniquement)
+  // jsQR (QR uniquement)
   try {
     const imgData = ctx.getImageData(0,0,canvasEl.width,canvasEl.height);
     const code = jsQR(imgData.data, imgData.width, imgData.height);
-    if (code && code.data) {
-      onCodeDetected(code.data);
-      return;
-    }
-  } catch(e){
-    console.warn('jsQR error', e);
-  }
+    if (code && code.data) { onCodeDetected(code.data); return; }
+  } catch(e){ /* ignore */ }
 
-  setStatus('Aucun code détecté. Approchez-vous, éclairez mieux, ou essayez un autre angle.');
+  setStatus('Aucun code détecté. Approchez-vous, éclairez mieux, ou changez d’angle.');
 }
 
-// ---------- Formulaire & API ----------
+// ---------- Formulaire & API (CORS simple: x-www-form-urlencoded) ----------
 async function onSubmit(ev) {
   ev.preventDefault();
   const code = document.getElementById('code').value.trim();
@@ -349,34 +297,32 @@ async function onSubmit(ev) {
   const date_mvt = document.getElementById('date_mvt').value;
   if (!code || !from || !to || !type) return setApiMsg('Veuillez remplir tous les champs.', true);
 
-  await stopCamera(); // économiser batterie + éviter bruit envoi
+  await stopCamera(); // économiser la batterie pendant l’envoi
 
-  const payload = {
-    code_scanné: code,
-    emplacement_depart: from,
-    emplacement_destination: to,
-    type_mobilier: type,
-    type_mobilier_autre: (type === 'Autre') ? typeAutre : '',
-    date_mouvement: date_mvt,
-    source_app_version: APP_VERSION
-  };
+  const form = new URLSearchParams();
+  form.set('action', 'create');
+  form.set('code_scanné', code);
+  form.set('emplacement_depart', from);
+  form.set('emplacement_destination', to);
+  form.set('type_mobilier', type);
+  form.set('type_mobilier_autre', (type === 'Autre') ? typeAutre : '');
+  form.set('date_mouvement', date_mvt);
+  form.set('source_app_version', APP_VERSION);
 
   try {
-    const url = `${API_BASE}?route=/items`;
-    const res = await fetch(url, {
+    const res = await fetch(`${API_BASE}?route=/items`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: form.toString(),
       mode: 'cors',
       credentials: 'omit'
     });
-    const xStatus = res.headers.get('X-Status') || '200';
-    const data = await res.json().catch(()=>({}));
-    if (xStatus.startsWith('2') && data.status >= 200 && data.status < 300) {
+    const data = await res.json().catch(()=> ({}));
+    if (data && data.status >= 200 && data.status < 300) {
       setApiMsg('Écrit dans Google Sheets ✅', false);
       document.getElementById('code').value = '';
     } else {
-      setApiMsg(`Erreur API (${xStatus}): ${data.message || 'Inconnue'}`, true);
+      setApiMsg(`Erreur API: ${data && data.message ? data.message : 'Inconnue'}`, true);
     }
   } catch (err) {
     console.error(err);
