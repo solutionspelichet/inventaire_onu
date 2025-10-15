@@ -114,6 +114,7 @@ async function refreshTodayCount() {
 
 /* ---------- Télécharger XLS (depuis CSV backend) ---------- */
 /* ---------- Télécharger XLS (depuis CSV backend) ---------- */
+/* ---------- Télécharger XLS (depuis CSV backend) : force colonne C en texte ---------- */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
   const to   = document.getElementById('export_to')?.value;
@@ -128,7 +129,6 @@ async function onDownloadXls() {
 
     const ct = res.headers.get('content-type') || '';
     const csvText = await res.text();
-
     if (!res.ok) { setStatus(`Erreur export (${res.status}).`); return; }
     if (ct.includes('application/json')) {
       try { const j = JSON.parse(csvText); setStatus(`Export: ${j.message || 'réponse JSON inattendue'}`); }
@@ -142,34 +142,55 @@ async function onDownloadXls() {
 
     if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
 
-    // 1) Crée le classeur depuis le CSV
-    const wb = XLSX.read(csvText, { type: 'string' });
+    // 1) Lire le CSV en mode "brut" pour éviter la conversion automatique en nombres
+    const wb = XLSX.read(csvText, { type: 'string', raw: true, cellText: false, cellDates: false });
 
-    // 2) Renommage PRUDENT de la 1ère feuille -> "Export" (sans duplication)
+    // 2) Renommer prudemment la première feuille en "Export"
     const first = wb.SheetNames[0];
     if (first !== 'Export') {
-      // si "Export" existe déjà, on l’efface pour éviter le doublon
-      if (wb.Sheets['Export']) {
-        delete wb.Sheets['Export'];
-        const idx = wb.SheetNames.indexOf('Export');
-        if (idx > -1) wb.SheetNames.splice(idx, 1);
-      }
-      // renomme en modifiant la map + la liste des noms
+      if (wb.Sheets['Export']) { delete wb.Sheets['Export']; const i = wb.SheetNames.indexOf('Export'); if (i>-1) wb.SheetNames.splice(i,1); }
       wb.Sheets['Export'] = wb.Sheets[first];
       delete wb.Sheets[first];
       const idxFirst = wb.SheetNames.indexOf(first);
       if (idxFirst > -1) wb.SheetNames[idxFirst] = 'Export';
     }
+    const ws = wb.Sheets['Export'];
 
+    // 3) Forcer la colonne C (code_scanné) au type texte
+    //    - t='s' (string), v et w = chaîne
+    //    - z='@' (format texte Excel)
+    const ref = ws['!ref'];
+    if (ref) {
+      const range = XLSX.utils.decode_range(ref);
+      // C = index 2 (A=0, B=1, C=2)
+      const colIdx = 2;
+      for (let R = range.s.r + 1; R <= range.e.r; R++) { // +1 pour sauter l'en-tête
+        const addr = XLSX.utils.encode_cell({ r: R, c: colIdx });
+        const cell = ws[addr];
+        if (!cell) continue;
+        const val = (cell.v == null) ? '' : String(cell.v);
+        cell.t = 's';
+        cell.v = val;
+        cell.w = val;
+        cell.z = '@';
+      }
+      // Optionnel : verrouiller le format texte pour toute la colonne via !cols
+      const cols = ws['!cols'] || [];
+      cols[colIdx] = Object.assign({}, cols[colIdx], { z: '@' });
+      ws['!cols'] = cols;
+    }
+
+    // 4) Télécharger le fichier Excel
     const filename = `inventaire_${from}_au_${to}.xlsx`;
     XLSX.writeFile(wb, filename);
 
-    setStatus('Fichier Excel téléchargé ✅');
+    setStatus('Fichier Excel téléchargé ✅ (codes conservés en texte)');
   } catch (err) {
     console.error(err);
     setStatus('Erreur export. Vérifiez la période et réessayez.');
   }
 }
+
 
 
 /* ---------- Sélection photo -> décodage auto ---------- */
