@@ -1,0 +1,53 @@
+:root {
+  color-scheme: dark;
+  --bg: #0d0d0d;
+  --card: #161616;
+  --text: #f1f1f1;
+  --muted: #b0b0b0;
+  --accent: #4aa3ff;
+  --ok: #22c55e;
+  --err: #ef4444;
+  --focus: #94c6ff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+
+.topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 12px 16px; border-bottom: 1px solid #222; background:#0b0b0b; position: sticky; top: 0; z-index: 10;
+}
+h1 { font-size: 18px; margin: 0; }
+.ghost { background: transparent; color: var(--muted); border:1px solid #2a2a2a; padding: 8px 10px; border-radius: 10px; }
+.ghost:hover { border-color:#3a3a3a; color:#ddd; }
+
+main { padding: 16px; max-width: 800px; margin: 0 auto; }
+.card { background: var(--card); border:1px solid #222; border-radius: 14px; padding: 14px; margin-bottom: 16px; }
+h2 { margin-top: 0; font-size: 18px; }
+.muted { color: var(--muted); }
+
+.video-wrap { position: relative; }
+video { width: 100%; max-height: 50vh; background: #000; border-radius: 10px; }
+canvas.hidden { display:none; }
+
+.controls { display:flex; gap:8px; margin-top: 8px; flex-wrap: wrap; }
+button { background: var(--accent); border: none; color:#000; padding:10px 14px; border-radius: 10px; font-weight:600; }
+button:disabled { opacity: .5; }
+button:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.field { display:flex; flex-direction:column; gap:6px; margin-bottom: 12px; }
+input, select {
+  background:#0b0b0b; color:var(--text); border:1px solid #2a2a2a; padding:10px; border-radius:10px;
+}
+input:focus, select:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.actions { display:flex; gap:10px; align-items:center; }
+
+.status { margin-top: 8px; font-size: 14px; color: var(--muted); }
+
+.flash {
+  position: absolute; inset: 0; background: white; opacity: 0; pointer-events: none; border-radius:10px;
+}
+.flash.active { animation: flash 300ms ease-out; }
+@keyframes flash { 0%{opacity:.9} 100%{opacity:0} }
+
+.foot { padding: 24px; text-align: center; color: var(--muted); }
