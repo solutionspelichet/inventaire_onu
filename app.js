@@ -255,6 +255,25 @@ function resetFormUI() {
     }, 300);
   }
 }
+// Remplit le formulaire avec des valeurs de test
+function onTest() {
+  const codeEl = document.getElementById('code');
+  const fromEl = document.getElementById('from');
+  const toEl = document.getElementById('to');
+  const typeEl = document.getElementById('type');
+  const dateEl = document.getElementById('date_mvt');
+
+  if (codeEl) codeEl.value = 'TEST-QR-123';
+  if (fromEl) fromEl.value = 'Voie Creuse';
+  if (toEl) toEl.value = 'Bibliothèque';
+  if (typeEl) { 
+    typeEl.value = 'Bureau'; 
+    typeEl.dispatchEvent(new Event('change')); 
+  }
+  if (dateEl) dateEl.value = (typeof todayISO === 'string' ? todayISO : new Date().toISOString().slice(0,10));
+
+  setStatus('Champs de test remplis. Appuyez sur “Enregistrer”.');
+}
 
 /* ---------- Helpers image / EXIF ---------- */
 async function loadImageWithOrientation(file) {
