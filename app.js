@@ -1,22 +1,23 @@
-/* Inventaire ONU — app.js (PHOTO UNIQUEMENT + compteur + export CSV)
- * - Icône "Scanner (photo)" → ouvre l'appareil photo (input file caché)
- * - Décodage auto : ZXing (multi-format) puis jsQR (fallback QR)
- * - EXIF + essais multi tailles/rotations
- * - POST vers Apps Script en x-www-form-urlencoded (pas de preflight CORS)
+/* Inventaire ONU — app.js (PHOTO UNIQUEMENT, sans cadre-guide)
+ * - Icône "Scanner (photo)" -> ouvre l'appareil photo (input file caché)
+ * - Décodage automatique dès que la photo est validée
+ * - Décodage robuste : ZXing (multi-format) puis jsQR (fallback QR)
+ * - Orientation EXIF + essais multi tailles/rotations
+ * - POST x-www-form-urlencoded (no preflight CORS)
  * - Reset après succès + relance auto capture
- * - Compteur "Scans aujourd’hui" (GET /stats) + Export CSV par dates (GET /export)
+ * - Compteur “Scans aujourd’hui” + Export CSV (dates)
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.0.7";
+const APP_VERSION = "1.0.8";
 const AUTO_RECAPTURE = true;
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
 let fileBlob = null;
-let todayISO = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+let todayISO = new Date().toISOString().slice(0,10);
 let todayCount = 0;
 
-// PWA install (facultatif)
+// PWA install (optionnel)
 let deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault(); deferredPrompt = e;
@@ -40,23 +41,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnCapture && photoInput) {
     btnCapture.addEventListener('click', () => { photoInput.click(); });
     photoInput.addEventListener('change', onPhotoPicked);
-  }
-
-  // Guide QR / code-barres
-  const btnQR = document.getElementById('guide-qr');
-  const btnBC = document.getElementById('guide-barcode');
-  const frame = document.getElementById('guide-frame');
-  if (btnQR && btnBC && frame) {
-    btnQR.addEventListener('click', () => {
-      btnQR.setAttribute('aria-pressed','true'); btnBC.setAttribute('aria-pressed','false');
-      frame.classList.add('guide-qr'); frame.classList.remove('guide-barcode');
-      setStatus('Mode guide : QR. Visez le code et touchez “Scanner (photo)”.');
-    });
-    btnBC.addEventListener('click', () => {
-      btnBC.setAttribute('aria-pressed','true'); btnQR.setAttribute('aria-pressed','false');
-      frame.classList.add('guide-barcode'); frame.classList.remove('guide-qr');
-      setStatus('Mode guide : Code-barres. Visez le code et touchez “Scanner (photo)”.');
-    });
   }
 
   // Formulaire
@@ -83,11 +67,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Service Worker
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 
-  // Charger le compteur d’aujourd’hui
+  // Charger le compteur du jour
   refreshTodayCount();
 });
 
-/* ================= Helpers UI ================= */
+/* ---------- UI helpers ---------- */
 function setStatus(msg){ if (statusEl) statusEl.textContent = msg; }
 function setApiMsg(msg, isError=false) {
   const el = document.getElementById('api-msg');
@@ -114,7 +98,7 @@ function onCodeDetected(text){
   if (codeInput) { codeInput.value = text; codeInput.focus(); }
 }
 
-/* ===== Compteur "Scans aujourd’hui" ===== */
+/* ---------- Compteur “Scans aujourd’hui” ---------- */
 async function refreshTodayCount() {
   try {
     const res = await fetch(`${API_BASE}?route=/stats&day=${todayISO}`, { method:'GET', mode:'cors', credentials:'omit' });
@@ -127,18 +111,17 @@ async function refreshTodayCount() {
   if (el) el.textContent = String(todayCount);
 }
 
-/* ===== Export CSV ===== */
+/* ---------- Export CSV ---------- */
 function onExport() {
   const from = document.getElementById('export_from')?.value;
   const to = document.getElementById('export_to')?.value;
   if (!from || !to) { setStatus('Choisissez une période complète (du… au…).'); return; }
   if (from > to) { setStatus('La date de début doit être antérieure à la date de fin.'); return; }
-  // Ouvre l’URL d’export (CSV) — le navigateur téléchargera ou affichera
   const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
   window.location.href = url;
 }
 
-/* ===== 1) Sélection photo -> décodage auto ===== */
+/* ---------- Sélection photo -> décodage auto ---------- */
 function onPhotoPicked(ev){
   const file = ev.target.files && ev.target.files[0];
   if (!file) {
@@ -149,7 +132,6 @@ function onPhotoPicked(ev){
   const url = URL.createObjectURL(file);
   if (previewEl) { previewEl.src = url; previewEl.style.display = 'block'; }
 
-  // Retire la pulsation du bouton (si présente)
   const btnCapture = document.getElementById('btn-capture');
   if (btnCapture) btnCapture.classList.remove('pulse');
 
@@ -157,7 +139,7 @@ function onPhotoPicked(ev){
   setTimeout(decodePhoto, 0);
 }
 
-/* ===== 2) Décodage robuste (ZXing + jsQR + EXIF) ===== */
+/* ---------- Décodage (ZXing + jsQR + EXIF) ---------- */
 async function decodePhoto(){
   if (!fileBlob) return;
   const {bitmap, width, height} = await loadImageWithOrientation(fileBlob);
@@ -199,7 +181,7 @@ async function decodePhoto(){
   setStatus('Aucun code détecté. Reprenez la photo (plus net, plus proche, meilleure lumière).');
 }
 
-/* ===== 3) Envoi backend (x-www-form-urlencoded) ===== */
+/* ---------- Envoi backend ---------- */
 async function onSubmit(ev) {
   ev.preventDefault();
   const code = (document.getElementById('code')?.value || '').trim();
@@ -232,11 +214,9 @@ async function onSubmit(ev) {
     const data = await res.json().catch(()=> ({}));
     if (data && data.status >= 200 && data.status < 300) {
       setApiMsg('Écrit dans Google Sheets ✅', false);
-      // Incrémente le compteur local + rafraîchit l’affichage
       if (document.getElementById('date_mvt')?.value === todayISO) {
         todayCount += 1; const el = document.getElementById('count-today'); if (el) el.textContent = String(todayCount);
       } else {
-        // si la date saisie n'est pas aujourd'hui, on recharge la vraie valeur
         refreshTodayCount();
       }
       resetFormUI();
@@ -249,7 +229,7 @@ async function onSubmit(ev) {
   }
 }
 
-/* ===== Reset + relance auto capture ===== */
+/* ---------- Reset + relance auto capture ---------- */
 function resetFormUI() {
   const form = document.getElementById('form'); if (form) form.reset();
   const typeOtherWrap = document.getElementById('field-type-autre'); if (typeOtherWrap) typeOtherWrap.hidden = true;
@@ -257,6 +237,7 @@ function resetFormUI() {
   const preview = document.getElementById('preview'); if (preview) { preview.src = ''; preview.style.display = 'none'; }
   const photoInput = document.getElementById('photoInput'); if (photoInput) { photoInput.value = ''; }
   fileBlob = null;
+
   setStatus('Saisie enregistrée ✅. Préparation d’un nouveau scan…');
   if (navigator.vibrate) navigator.vibrate(50);
 
@@ -275,7 +256,7 @@ function resetFormUI() {
   }
 }
 
-/* ================= Helpers image / EXIF ================= */
+/* ---------- Helpers image / EXIF ---------- */
 async function loadImageWithOrientation(file) {
   if ('createImageBitmap' in window) {
     try {
@@ -300,7 +281,6 @@ async function loadImageWithOrientation(file) {
   const {canvas, w, h} = drawOriented(bmp, orientation);
   return { bitmap: canvas, width: w, height: h };
 }
-
 function sizeAfterRotation(w, h, deg){ return (deg % 180 === 0) ? {w, h} : {w: h, h: w}; }
 function showPreviewFromCanvas() { if (!previewEl) return; try { previewEl.src = canvasEl.toDataURL('image/png'); previewEl.style.display = 'block'; } catch (_) {} }
 
@@ -313,7 +293,6 @@ function loadImageElement(file) {
     img.src = url;
   });
 }
-
 async function getExifOrientation(file) {
   const buf = await file.slice(0, 64*1024).arrayBuffer();
   const view = new DataView(buf);
@@ -345,7 +324,6 @@ async function getExifOrientation(file) {
   }
   return 1;
 }
-
 function drawOriented(srcBitmap, orientation) {
   const sw = srcBitmap.width || srcBitmap.canvas?.width;
   const sh = srcBitmap.height || srcBitmap.canvas?.height;
@@ -353,7 +331,6 @@ function drawOriented(srcBitmap, orientation) {
   if ([5,6,7,8].includes(orientation)) { dw = sh; dh = sw; }
   const canvas = document.createElement('canvas'); canvas.width = dw; canvas.height = dh;
   const c = canvas.getContext('2d');
-
   switch (orientation) {
     case 2: c.translate(dw, 0); c.scale(-1, 1); break;
     case 3: c.translate(dw, dh); c.rotate(Math.PI); break;
