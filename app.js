@@ -113,6 +113,7 @@ async function refreshTodayCount() {
 }
 
 /* ---------- Télécharger XLS (depuis CSV backend) ---------- */
+/* ---------- Télécharger XLS (depuis CSV backend) ---------- */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
   const to   = document.getElementById('export_to')?.value;
@@ -129,13 +130,9 @@ async function onDownloadXls() {
     const csvText = await res.text();
 
     if (!res.ok) { setStatus(`Erreur export (${res.status}).`); return; }
-
-    // Si Apps Script a répondu JSON (erreur), on informe
     if (ct.includes('application/json')) {
-      try {
-        const j = JSON.parse(csvText);
-        setStatus(`Export: ${j.message || 'réponse JSON inattendue'}`);
-      } catch { setStatus('Export: réponse JSON inattendue.'); }
+      try { const j = JSON.parse(csvText); setStatus(`Export: ${j.message || 'réponse JSON inattendue'}`); }
+      catch { setStatus('Export: réponse JSON inattendue.'); }
       return;
     }
 
@@ -145,21 +142,23 @@ async function onDownloadXls() {
 
     if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
 
-    // Conversion robuste CSV -> Workbook (compat universelle)
+    // 1) Crée le classeur depuis le CSV
     const wb = XLSX.read(csvText, { type: 'string' });
-    if (!wb.SheetNames || wb.SheetNames.length === 0) {
-      setStatus('Conversion Excel impossible (feuille vide).');
-      return;
-    }
 
-    // Renomme la première feuille en “Export” (optionnel)
+    // 2) Renommage PRUDENT de la 1ère feuille -> "Export" (sans duplication)
     const first = wb.SheetNames[0];
     if (first !== 'Export') {
-      const ws = wb.Sheets[first];
-      XLSX.utils.book_append_sheet(wb, ws, 'Export');
+      // si "Export" existe déjà, on l’efface pour éviter le doublon
+      if (wb.Sheets['Export']) {
+        delete wb.Sheets['Export'];
+        const idx = wb.SheetNames.indexOf('Export');
+        if (idx > -1) wb.SheetNames.splice(idx, 1);
+      }
+      // renomme en modifiant la map + la liste des noms
+      wb.Sheets['Export'] = wb.Sheets[first];
       delete wb.Sheets[first];
-      const idx = wb.SheetNames.indexOf(first);
-      if (idx > -1) wb.SheetNames.splice(idx, 1, 'Export');
+      const idxFirst = wb.SheetNames.indexOf(first);
+      if (idxFirst > -1) wb.SheetNames[idxFirst] = 'Export';
     }
 
     const filename = `inventaire_${from}_au_${to}.xlsx`;
@@ -171,6 +170,7 @@ async function onDownloadXls() {
     setStatus('Erreur export. Vérifiez la période et réessayez.');
   }
 }
+
 
 /* ---------- Sélection photo -> décodage auto ---------- */
 function onPhotoPicked(ev){
