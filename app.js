@@ -1,73 +1,81 @@
-/* Inventaire ONU — app.js (PHOTO UNIQUEMENT, compteur bas de page + téléchargement XLS)
- * - Bouton icône "Scanner (photo)" -> ouvre l'appareil photo (input file caché)
- * - Décodage auto : ZXing (multi-format) puis jsQR (fallback QR)
- * - Orientation EXIF + essais multi tailles/rotations
- * - POST x-www-form-urlencoded (no preflight CORS)
- * - Reset après succès + relance auto capture
- * - Compteur “Scans aujourd’hui” + Téléchargement Excel (.xlsx) depuis CSV backend
- */
+/* Inventaire ONU — app.js (photo + export XLS + thème + valeurs persistées) */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 const AUTO_RECAPTURE = true;
-
-/* ===== Thème clair/sombre ===== */
-function applyTheme(theme) {
-  const root = document.documentElement;
-  root.setAttribute('data-theme', theme);
-  // meta theme-color pour la barre d'adresse mobile
-  let meta = document.querySelector('meta[name="theme-color"]');
-  if (!meta) {
-    meta = document.createElement('meta');
-    meta.setAttribute('name', 'theme-color');
-    document.head.appendChild(meta);
-  }
-  meta.setAttribute('content', theme === 'light' ? '#f7f9fb' : '#101418');
-
-  // icônes bouton
-  const btn = document.getElementById('btn-theme');
-  const sun = document.getElementById('icon-sun');
-  const moon = document.getElementById('icon-moon');
-  if (btn && sun && moon) {
-    const isDark = theme !== 'light';
-    btn.setAttribute('aria-pressed', String(isDark));
-    sun.hidden = !isDark;  // soleil visible en dark (= on propose d'aller vers light)
-    moon.hidden = isDark;
-  }
-}
-function initTheme() {
-  // Si rien en storage, on reste en light (défaut CSS)
-  const stored = localStorage.getItem('theme');
-  applyTheme(stored || 'light');
-}
-
-function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme') || 'dark';
-  const next = current === 'light' ? 'dark' : 'light';
-  localStorage.setItem('theme', next);
-  applyTheme(next);
-}
-
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
 let fileBlob = null;
 let todayISO = new Date().toISOString().slice(0,10);
 let todayCount = 0;
 
-// PWA install (optionnel)
-let deferredPrompt = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault(); deferredPrompt = e;
-  const btn = document.getElementById('btn-install');
-  if (btn) {
-    btn.hidden = false;
-    btn.onclick = async () => { btn.hidden = true; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; };
+/* ===== Thème clair/sombre ===== */
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === 'dark') root.setAttribute('data-theme','dark'); else root.removeAttribute('data-theme');
+
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name','theme-color'); document.head.appendChild(meta); }
+  meta.setAttribute('content', theme === 'dark' ? '#121417' : '#f6f8fa');
+
+  const btn = document.getElementById('btn-theme');
+  const sun = document.getElementById('icon-sun');
+  const moon = document.getElementById('icon-moon');
+  if (btn && sun && moon) {
+    const isDark = theme === 'dark';
+    btn.setAttribute('aria-pressed', String(isDark));
+    sun.hidden = isDark;  // soleil visible en light
+    moon.hidden = !isDark;
   }
-});
+}
+function initTheme() {
+  const stored = localStorage.getItem('theme');
+  applyTheme(stored || 'light'); // défaut = clair
+}
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const next = current === 'light' ? 'dark' : 'light';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
+}
+
+/* ===== Valeurs persistées (from, to, type) ===== */
+const PERSIST_KEY = 'inventaire_defaults_v1';
+function loadPersistentDefaults() {
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data && typeof data === 'object') {
+      if (data.from) document.getElementById('from').value = data.from;
+      if (data.to) document.getElementById('to').value = data.to;
+      if (data.type) {
+        const sel = document.getElementById('type');
+        sel.value = data.type;
+        sel.dispatchEvent(new Event('change'));
+      }
+    }
+  } catch(_) {}
+}
+function savePersistentDefaults() {
+  try {
+    const from = (document.getElementById('from')?.value || '').trim();
+    const to   = (document.getElementById('to')?.value || '').trim();
+    const type = document.getElementById('type')?.value || '';
+    const data = { from, to, type };
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+  } catch(_) {}
+}
+function clearPersistentDefaults() {
+  try { localStorage.removeItem(PERSIST_KEY); } catch(_) {}
+  const from = document.getElementById('from'); if (from) from.value = '';
+  const to   = document.getElementById('to');   if (to) to.value   = '';
+  const type = document.getElementById('type'); if (type) { type.value=''; type.dispatchEvent(new Event('change')); }
+  setStatus('Valeurs par défaut effacées.');
+}
 
 document.addEventListener('DOMContentLoaded', () => {
-  
-    // Thème
+  // Thème
   initTheme();
   const btnTheme = document.getElementById('btn-theme');
   if (btnTheme) btnTheme.addEventListener('click', toggleTheme);
@@ -101,7 +109,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnTest = document.getElementById('btn-test');
   if (btnTest) btnTest.addEventListener('click', onTest);
 
-  // Export XLS (bloc bas de page)
+  const btnClearDefaults = document.getElementById('btn-clear-defaults');
+  if (btnClearDefaults) btnClearDefaults.addEventListener('click', clearPersistentDefaults);
+
+  // Export XLS
   const exportFrom = document.getElementById('export_from');
   const exportTo = document.getElementById('export_to');
   const btnXls = document.getElementById('btn-download-xls');
@@ -112,15 +123,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // Service Worker
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 
-  // Compteur du jour
+  // Compteur + valeurs persistées
   refreshTodayCount();
+  loadPersistentDefaults();
 });
 
 /* ---------- UI helpers ---------- */
 function setStatus(msg){ if (statusEl) statusEl.textContent = msg; }
 function setApiMsg(msg, isError=false) {
   const el = document.getElementById('api-msg');
-  if (!el) return; el.textContent = msg; el.style.color = isError ? 'var(--err)' : 'var(--ok)';
+  if (!el) return; el.textContent = msg; el.style.color = isError ? '#ef4444' : '#22c55e';
 }
 function vibrate(){ if (navigator.vibrate) navigator.vibrate(200); }
 function flash(){ if (!flashEl) return; flashEl.classList.remove('active'); void flashEl.offsetWidth; flashEl.classList.add('active'); }
@@ -156,10 +168,7 @@ async function refreshTodayCount() {
   if (el) el.textContent = String(todayCount);
 }
 
-/* ---------- Télécharger XLS (depuis CSV backend) ---------- */
-/* ---------- Télécharger XLS (depuis CSV backend) ---------- */
-/* ---------- Télécharger XLS (depuis CSV backend) : force colonne C en texte ---------- */
-/* ---------- Télécharger XLS (depuis CSV backend) : force C en texte + largeur auto ---------- */
+/* ---------- Télécharger XLS (colonne C en texte + largeur auto) ---------- */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
   const to   = document.getElementById('export_to')?.value;
@@ -174,6 +183,7 @@ async function onDownloadXls() {
 
     const ct = res.headers.get('content-type') || '';
     const csvText = await res.text();
+
     if (!res.ok) { setStatus(`Erreur export (${res.status}).`); return; }
     if (ct.includes('application/json')) {
       try { const j = JSON.parse(csvText); setStatus(`Export: ${j.message || 'réponse JSON inattendue'}`); }
@@ -187,10 +197,8 @@ async function onDownloadXls() {
 
     if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
 
-    // 1) CSV -> Workbook (sans conversion auto des nombres)
     const wb = XLSX.read(csvText, { type: 'string', raw: true, cellText: false, cellDates: false });
 
-    // 2) Renomme prudemment la feuille -> "Export"
     const first = wb.SheetNames[0];
     if (first !== 'Export') {
       if (wb.Sheets['Export']) { delete wb.Sheets['Export']; const i = wb.SheetNames.indexOf('Export'); if (i>-1) wb.SheetNames.splice(i,1); }
@@ -201,49 +209,38 @@ async function onDownloadXls() {
     }
     const ws = wb.Sheets['Export'];
 
-    // 3) Force la colonne C (index 2) en TEXTE + calcule largeur auto
+    // Forcer colonne C (index 2) en texte + largeur auto
     const ref = ws['!ref'];
     if (ref) {
       const range = XLSX.utils.decode_range(ref);
       const colIdx = 2; // C
-      let maxLen = 'code_scanné'.length; // tient compte de l'en-tête
+      let maxLen = 'code_scanné'.length;
 
-      for (let R = range.s.r + 1; R <= range.e.r; R++) { // +1 : saute l'en-tête
+      for (let R = range.s.r + 1; R <= range.e.r; R++) { // +1 header
         const addr = XLSX.utils.encode_cell({ r: R, c: colIdx });
         const cell = ws[addr];
         if (!cell) continue;
         const val = (cell.v == null) ? '' : String(cell.v);
-        // force texte
-        cell.t = 's';
-        cell.v = val;
-        cell.w = val;
-        cell.z = '@';
-        // mesure pour largeur
+        cell.t = 's'; cell.v = val; cell.w = val; cell.z = '@';
         if (val.length > maxLen) maxLen = val.length;
       }
 
-      // Min 18ch, Max 40ch pour éviter monstrueux
       const wch = Math.max(18, Math.min(40, maxLen + 2));
-
-      // Initialise / met à jour !cols
       const cols = ws['!cols'] || [];
-      // ensure entries up to colIdx exist
       while (cols.length <= colIdx) cols.push({});
-      cols[colIdx] = { wch, hidden: false }; // visible + largeur en caractères
+      cols[colIdx] = { wch, hidden: false };
       ws['!cols'] = cols;
     }
 
-    // 4) Télécharge le fichier
     const filename = `inventaire_${from}_au_${to}.xlsx`;
     XLSX.writeFile(wb, filename);
 
-    setStatus('Fichier Excel téléchargé ✅ (colonne C visible & élargie)');
+    setStatus('Fichier Excel téléchargé ✅ (colonne C en texte)');
   } catch (err) {
     console.error(err);
     setStatus('Erreur export. Vérifiez la période et réessayez.');
   }
 }
-
 
 /* ---------- Sélection photo -> décodage auto ---------- */
 function onPhotoPicked(ev){
@@ -338,12 +335,16 @@ async function onSubmit(ev) {
     const data = await res.json().catch(()=> ({}));
     if (data && data.status >= 200 && data.status < 300) {
       setApiMsg('Écrit dans Google Sheets ✅', false);
+
+      // Sauvegarde des valeurs par défaut choisies
+      savePersistentDefaults();
+
       if (document.getElementById('date_mvt')?.value === todayISO) {
         todayCount += 1; const el = document.getElementById('count-today'); if (el) el.textContent = String(todayCount);
       } else {
         refreshTodayCount();
       }
-      resetFormUI();
+      resetFormUI(); // reset doux (ne touche pas from/to/type)
     } else {
       setApiMsg(`Erreur API: ${data && data.message ? data.message : 'Inconnue'}`, true);
     }
@@ -353,11 +354,16 @@ async function onSubmit(ev) {
   }
 }
 
-/* ---------- Reset + relance auto capture ---------- */
+/* ---------- Reset doux + relance auto capture ---------- */
 function resetFormUI() {
-  const form = document.getElementById('form'); if (form) form.reset();
-  const typeOtherWrap = document.getElementById('field-type-autre'); if (typeOtherWrap) typeOtherWrap.hidden = true;
+  // Ne PAS réinitialiser from/to/type (ils sont persistés)
+  const codeEl = document.getElementById('code');      if (codeEl) codeEl.value = '';
+  const typeOtherWrap = document.getElementById('field-type-autre');
+  const typeAutre = document.getElementById('type_autre');
+  if (typeOtherWrap) typeOtherWrap.hidden = (document.getElementById('type')?.value !== 'Autre');
+  if (typeAutre) typeAutre.value = '';
   const dateInput = document.getElementById('date_mvt'); if (dateInput) dateInput.value = todayISO;
+
   const preview = document.getElementById('preview'); if (preview) { preview.src = ''; preview.style.display = 'none'; }
   const photoInput = document.getElementById('photoInput'); if (photoInput) { photoInput.value = ''; }
   fileBlob = null;
@@ -389,9 +395,9 @@ function onTest() {
   const dateEl = document.getElementById('date_mvt');
 
   if (codeEl) codeEl.value = 'TEST-QR-123';
-  if (fromEl) fromEl.value = 'Voie Creuse';
-  if (toEl) toEl.value = 'Bibliothèque';
-  if (typeEl) { typeEl.value = 'Bureau'; typeEl.dispatchEvent(new Event('change')); }
+  if (fromEl && !fromEl.value) fromEl.value = 'Voie Creuse';
+  if (toEl && !toEl.value) toEl.value = 'Bibliothèque';
+  if (typeEl && !typeEl.value) { typeEl.value = 'Bureau'; typeEl.dispatchEvent(new Event('change')); }
   if (dateEl) dateEl.value = todayISO;
 
   setStatus('Champs de test remplis. Appuyez sur “Enregistrer”.');
@@ -437,7 +443,7 @@ function loadImageElement(file) {
 async function getExifOrientation(file) {
   const buf = await file.slice(0, 64*1024).arrayBuffer();
   const view = new DataView(buf);
-  if (view.getUint16(0, false) !== 0xFFD8) return 1; // pas JPEG
+  if (view.getUint16(0, false) !== 0xFFD8) return 1;
   let offset = 2; const length = view.byteLength;
   while (offset < length) {
     const marker = view.getUint16(offset, false); offset += 2;
