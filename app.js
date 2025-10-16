@@ -1,7 +1,7 @@
-/* Inventaire ONU — app.js (photo + export XLS + thème + valeurs persistées) */
+/* Inventaire ONU — app.js (photo + export XLS + thème + valeurs persistées + moteur scan renforcé) */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0"; // maj moteur de reconnaissance
 const AUTO_RECAPTURE = true;
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
@@ -13,11 +13,9 @@ let todayCount = 0;
 function applyTheme(theme) {
   const root = document.documentElement;
   if (theme === 'dark') root.setAttribute('data-theme','dark'); else root.removeAttribute('data-theme');
-
   let meta = document.querySelector('meta[name="theme-color"]');
   if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name','theme-color'); document.head.appendChild(meta); }
   meta.setAttribute('content', theme === 'dark' ? '#121417' : '#f6f8fa');
-
   const btn = document.getElementById('btn-theme');
   const sun = document.getElementById('icon-sun');
   const moon = document.getElementById('icon-moon');
@@ -72,6 +70,78 @@ function clearPersistentDefaults() {
   const to   = document.getElementById('to');   if (to) to.value   = '';
   const type = document.getElementById('type'); if (type) { type.value=''; type.dispatchEvent(new Event('change')); }
   setStatus('Valeurs par défaut effacées.');
+}
+
+/* ===== Détecteurs & hints (moteur renforcé) ===== */
+const ZX_HINTS = (function(){
+  try {
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    const formats = [
+      ZXing.BarcodeFormat.QR_CODE,
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.ITF,
+      ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,
+    ];
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+    return hints;
+  } catch(_) { return null; }
+})();
+
+function preprocessCanvas(ctx, w, h) {
+  const img = ctx.getImageData(0,0,w,h);
+  const d = img.data;
+  const gamma = 0.9, contrast = 1.15, mid = 128;
+  for (let i=0; i<d.length; i+=4) {
+    let r=d[i], g=d[i+1], b=d[i+2];
+    r = 255*Math.pow(r/255, gamma);
+    g = 255*Math.pow(g/255, gamma);
+    b = 255*Math.pow(b/255, gamma);
+    r = (r - mid)*contrast + mid;
+    g = (g - mid)*contrast + mid;
+    b = (b - mid)*contrast + mid;
+    d[i]   = Math.max(0, Math.min(255, r));
+    d[i+1] = Math.max(0, Math.min(255, g));
+    d[i+2] = Math.max(0, Math.min(255, b));
+  }
+  ctx.putImageData(img, 0, 0);
+}
+async function tryBarcodeDetector(canvas) {
+  if (!('BarcodeDetector' in window)) return null;
+  try {
+    const sup = await BarcodeDetector.getSupportedFormats?.();
+    const wanted = ['qr_code','ean_13','code_128','code_39','itf','upc_e','upc_a'];
+    const fmts = sup ? wanted.filter(f => sup.includes(f)) : wanted;
+    const det = new BarcodeDetector({ formats: fmts });
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png', 0.92));
+    const imgBitmap = await createImageBitmap(blob);
+    const res = await det.detect(imgBitmap);
+    if (res && res[0] && res[0].rawValue) return { text: res[0].rawValue, engine: 'BarcodeDetector' };
+  } catch(_) {}
+  return null;
+}
+function tryZXingFromCanvas(canvas) {
+  try {
+    const luminance = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+    const bin = new ZXing.HybridBinarizer(luminance);
+    const bmp = new ZXing.BinaryBitmap(bin);
+    const reader = new ZXing.MultiFormatReader();
+    if (ZX_HINTS) reader.setHints(ZX_HINTS);
+    const res = reader.decode(bmp);
+    if (res && res.getText) return { text: res.getText(), engine: 'ZXing' };
+  } catch(_) {}
+  return null;
+}
+function tryJsQRFromCanvas(ctx, w, h) {
+  try {
+    const data = ctx.getImageData(0,0,w,h);
+    const code = jsQR(data.data, w, h);
+    if (code && code.data) return { text: code.data, engine: 'jsQR' };
+  } catch(_) {}
+  return null;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -260,17 +330,18 @@ function onPhotoPicked(ev){
   setTimeout(decodePhoto, 0);
 }
 
-/* ---------- Décodage (ZXing + jsQR + EXIF) ---------- */
+/* ---------- Décodage robuste (BarcodeDetector -> ZXing -> jsQR) ---------- */
 async function decodePhoto(){
   if (!fileBlob) return;
+
   const {bitmap, width, height} = await loadImageWithOrientation(fileBlob);
-  const scales = [1.0, 0.75, 0.5];
+  const scales    = [1.0, 0.8, 0.6, 0.45];
   const rotations = [0, 90, 180, 270];
 
   for (const scale of scales) {
     for (const rot of rotations) {
-      const targetW = Math.round(width * scale);
-      const targetH = Math.round(height * scale);
+      const targetW = Math.max(240, Math.round(width * scale));
+      const targetH = Math.max(240, Math.round(height * scale));
       const {w, h} = sizeAfterRotation(targetW, targetH, rot);
       canvasEl.width = w; canvasEl.height = h;
 
@@ -278,23 +349,23 @@ async function decodePhoto(){
       ctx2.save();
       ctx2.translate(w/2, h/2);
       ctx2.rotate(rot * Math.PI/180);
-      ctx2.filter = 'contrast(1.15) brightness(1.05)';
       ctx2.drawImage(bitmap, -targetW/2, -targetH/2, targetW, targetH);
       ctx2.restore();
 
-      try {
-        const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvasEl);
-        const bitmapZX = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
-        const reader = new ZXing.MultiFormatReader();
-        const res = reader.decode(bitmapZX);
-        if (res && res.getText) { showPreviewFromCanvas(); onCodeDetected(res.getText()); return; }
-      } catch (_) {}
+      // petit pré-traitement
+      preprocessCanvas(ctx2, w, h);
 
-      try {
-        const imgData = ctx2.getImageData(0,0,canvasEl.width,canvasEl.height);
-        const code = jsQR(imgData.data, imgData.width, imgData.height);
-        if (code && code.data) { showPreviewFromCanvas(); onCodeDetected(code.data); return; }
-      } catch (_) {}
+      // 1) BarcodeDetector (quand dispo)
+      const bd = await tryBarcodeDetector(canvasEl);
+      if (bd) { showPreviewFromCanvas(); console.log('Decoded via', bd.engine); onCodeDetected(bd.text); return; }
+
+      // 2) ZXing avec hints
+      const zx = tryZXingFromCanvas(canvasEl);
+      if (zx) { showPreviewFromCanvas(); console.log('Decoded via', zx.engine); onCodeDetected(zx.text); return; }
+
+      // 3) jsQR (fallback)
+      const jq = tryJsQRFromCanvas(ctx2, w, h);
+      if (jq) { showPreviewFromCanvas(); console.log('Decoded via', jq.engine); onCodeDetected(jq.text); return; }
     }
   }
 
