@@ -9,7 +9,7 @@ const APP_VERSION = "2.1.1";
 const AUTO_RECAPTURE = true;
 
 // ⚠️ même valeur que dans Apps Script (Script Properties → APP_SECRET)
-const APP_SECRET = "VOTRE_SECRET_TRES_LONG"; // <<< MODIFIE-MOI
+const APP_SECRET = "Whatthefuck?"; // <<< MODIFIE-MOI
 
 let canvasEl, statusEl, flashEl, previewEl;
 let fileBlob = null;
