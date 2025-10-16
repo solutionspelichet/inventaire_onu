@@ -1,14 +1,7 @@
-/* Inventaire ONU — app.js
- * - Bouton "Installer" : prompt Android/desktop + aide iOS (Safari), jamais auto
- * - Thème Pelichet (clair par défaut) + toggle
- * - Scan photo : BarcodeDetector → ZXing + hints → jsQR (fallback)
- * - Persistance des champs (from/to/type) + bouton d’effacement
- * - POST vers Apps Script en x-www-form-urlencoded
- * - Export XLSX : colonne C texte + largeur auto
- */
+/* Inventaire ONU — app.js (install Android + aide iOS sûre, thème, scan, export, persistance) */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.5.1";
 const AUTO_RECAPTURE = true;
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
@@ -16,59 +9,53 @@ let fileBlob = null;
 let todayISO = new Date().toISOString().slice(0,10);
 let todayCount = 0;
 
-/* ===== PWA Install (Android prompt + iOS aide) ===== */
+/* ================== PWA Install (Android prompt + iOS aide) ================== */
 let deferredPrompt = null;
 const IOS_A2HS_DISMISSED_KEY = 'ios_a2hs_dismissed_v1';
 
 function isIos() {
-  const ua = window.navigator.userAgent || '';
+  const ua = navigator.userAgent || '';
   return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 function isSafari() {
-  const ua = window.navigator.userAgent || '';
+  const ua = navigator.userAgent || '';
   // vrai Safari (pas Chrome/Firefox/Edge iOS)
   return /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
 }
 function isInStandalone() {
-  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 }
 
-// Android/desktop Chrome: capturer l’événement du prompt
+// Android/desktop Chrome: on capture le prompt
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
   const btn = document.getElementById('btn-install');
-  // Bouton visible si pas déjà installé
+  // Affiche le bouton uniquement si pas déjà installé
   if (btn && !isInStandalone()) btn.hidden = false;
 });
 
-// Ouvre le panneau iOS (jamais automatiquement, seulement à la demande)
 function openIosA2hsPanel() {
   const panel = document.getElementById('ios-a2hs');
   if (!panel) return;
   panel.hidden = false;
   const ok = document.getElementById('ios-a2hs-close');
-  if (ok) setTimeout(()=>ok.focus(), 0);
+  if (ok) setTimeout(() => ok.focus(), 0);
 }
-
 function closeIosA2hsPanel(persistDismiss = true) {
   const panel = document.getElementById('ios-a2hs');
   if (!panel) return;
   panel.hidden = true;
-  if (persistDismiss) {
-    try { localStorage.setItem(IOS_A2HS_DISMISSED_KEY, '1'); } catch(_) {}
-  }
+  if (persistDismiss) { try { localStorage.setItem(IOS_A2HS_DISMISSED_KEY, '1'); } catch(_) {} }
 }
 
-/* ===== Thème clair/sombre ===== */
+/* ================== Thème clair/sombre ================== */
 function applyTheme(theme) {
   const root = document.documentElement;
   if (theme === 'dark') root.setAttribute('data-theme','dark'); else root.removeAttribute('data-theme');
-  // meta couleur barre adresse
   let meta = document.querySelector('meta[name="theme-color"]');
   if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name','theme-color'); document.head.appendChild(meta); }
   meta.setAttribute('content', theme === 'dark' ? '#121417' : '#f6f8fa');
-  // icônes bouton
   const btn = document.getElementById('btn-theme');
   const sun = document.getElementById('icon-sun');
   const moon = document.getElementById('icon-moon');
@@ -81,7 +68,7 @@ function applyTheme(theme) {
 }
 function initTheme() {
   const stored = localStorage.getItem('theme');
-  applyTheme(stored || 'light'); // défaut clair
+  applyTheme(stored || 'light');
 }
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
@@ -90,7 +77,7 @@ function toggleTheme() {
   applyTheme(next);
 }
 
-/* ===== Valeurs persistées (from, to, type) ===== */
+/* ================== Valeurs persistées (from, to, type) ================== */
 const PERSIST_KEY = 'inventaire_defaults_v1';
 function loadPersistentDefaults() {
   try {
@@ -113,8 +100,7 @@ function savePersistentDefaults() {
     const from = (document.getElementById('from')?.value || '').trim();
     const to   = (document.getElementById('to')?.value || '').trim();
     const type = document.getElementById('type')?.value || '';
-    const data = { from, to, type };
-    localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ from, to, type }));
   } catch(_) {}
 }
 function clearPersistentDefaults() {
@@ -125,7 +111,7 @@ function clearPersistentDefaults() {
   setStatus('Valeurs par défaut effacées.');
 }
 
-/* ===== Détecteurs & hints (moteur scan renforcé) ===== */
+/* ================== Scan : BarcodeDetector → ZXing + hints → jsQR ================== */
 const ZX_HINTS = (function(){
   try {
     const hints = new Map();
@@ -143,7 +129,6 @@ const ZX_HINTS = (function(){
     return hints;
   } catch(_) { return null; }
 })();
-
 function preprocessCanvas(ctx, w, h) {
   const img = ctx.getImageData(0,0,w,h);
   const d = img.data;
@@ -197,39 +182,46 @@ function tryJsQRFromCanvas(ctx, w, h) {
   return null;
 }
 
-/* ===== DOM Ready ===== */
+/* ================== DOM Ready ================== */
 document.addEventListener('DOMContentLoaded', () => {
   // Thème
   initTheme();
   const btnTheme = document.getElementById('btn-theme');
   if (btnTheme) btnTheme.addEventListener('click', toggleTheme);
 
-  // Install button logic (Android prompt / iOS aide)
+  // ----- Install button logic -----
   const btnInstall = document.getElementById('btn-install');
   const iosPanel   = document.getElementById('ios-a2hs');
   const iosClose   = document.getElementById('ios-a2hs-close');
+  const iosCard    = document.querySelector('#ios-a2hs .ios-a2hs-card');
 
-  // Ne jamais ouvrir automatiquement (ni iOS ni Android). On montre le bouton :
-  // - Android/desktop: quand l'événement beforeinstallprompt arrive (voir listener plus haut)
-  // - iOS Safari: on l'affiche pour permettre d'ouvrir l'aide (pas de prompt natif)
-  if (btnInstall && isIos() && isSafari() && !isInStandalone()) {
-    btnInstall.hidden = false;
+  // 0) Sécurité : si ce n’est PAS iOS+Safari, on FORCE le panneau iOS caché
+  if (iosPanel && !(isIos() && isSafari())) {
+    iosPanel.hidden = true;
+    // au cas où : retire tout style résiduel pouvant l’afficher
+    iosPanel.style.display = ''; // laisser le navigateur gérer "hidden"
   }
 
+  // Affichage du bouton :
+  // - Android/desktop : sera affiché par le listener beforeinstallprompt (ci-dessus)
+  // - iOS Safari non installé : on l’affiche ici pour pouvoir ouvrir l’aide
   if (btnInstall) {
+    if (isIos() && isSafari() && !isInStandalone()) {
+      btnInstall.hidden = false;
+    }
     btnInstall.addEventListener('click', async () => {
-      // iOS Safari : afficher l’aide (pas de prompt Apple)
+      // iOS Safari : ouvrir l’aide (jamais le panel sur Android)
       if (isIos() && isSafari() && !isInStandalone()) {
         openIosA2hsPanel();
         return;
       }
-      // Autres plateformes (Android/desktop) : déclencher le prompt natif si capturé
+      // Android/desktop : déclencher le prompt natif si dispo
       if (deferredPrompt) {
         btnInstall.hidden = true;
         try {
           await deferredPrompt.prompt();
-          await deferredPrompt.userChoice; // accepted/dismissed
-        } catch (_) {}
+          await deferredPrompt.userChoice;
+        } catch(_) {}
         deferredPrompt = null;
       } else {
         alert('Pour installer : utilisez le menu du navigateur (“Ajouter à l’écran d’accueil”).');
@@ -237,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Fermer correctement le panneau iOS
+  // Fermeture du panneau iOS (OK, clic overlay, Échap)
   if (iosClose) iosClose.addEventListener('click', () => closeIosA2hsPanel(true));
   if (iosPanel) {
     iosPanel.addEventListener('click', (ev) => {
@@ -246,13 +238,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('keydown', (ev) => {
       if (!iosPanel.hidden && ev.key === 'Escape') closeIosA2hsPanel(true);
     });
-    if (isInStandalone()) iosPanel.hidden = true; // si déjà installé, ne jamais montrer
   }
-  // On ne ré-affiche jamais automatiquement (on lit la clé au cas où pour usage futur)
-  const _dismissed = localStorage.getItem(IOS_A2HS_DISMISSED_KEY) === '1';
-  // pas d’action
+  // Empêcher que le clic dans la carte ferme le panel
+  if (iosCard) {
+    iosCard.addEventListener('click', (e) => e.stopPropagation());
+  }
 
-  // Réfs UI
+  // Réfs UI scan
   canvasEl = document.getElementById('canvas');
   ctx = canvasEl.getContext('2d', { willReadFrequently: true });
   statusEl = document.getElementById('status');
@@ -301,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadPersistentDefaults();
 });
 
-/* ---------- UI helpers ---------- */
+/* ================== UI helpers ================== */
 function setStatus(msg){ if (statusEl) statusEl.textContent = msg; }
 function setApiMsg(msg, isError=false) {
   const el = document.getElementById('api-msg');
@@ -328,7 +320,7 @@ function onCodeDetected(text){
   if (codeInput) { codeInput.value = text; codeInput.focus(); }
 }
 
-/* ---------- Compteur “Scans aujourd’hui” ---------- */
+/* ================== Compteur “Scans aujourd’hui” ================== */
 async function refreshTodayCount() {
   try {
     const res = await fetch(`${API_BASE}?route=/stats&day=${todayISO}`, { method:'GET', mode:'cors', credentials:'omit' });
@@ -341,7 +333,7 @@ async function refreshTodayCount() {
   if (el) el.textContent = String(todayCount);
 }
 
-/* ---------- Télécharger XLS (colonne C en texte + largeur auto) ---------- */
+/* ================== Export XLS (col. C en texte + largeur auto) ================== */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
   const to   = document.getElementById('export_to')?.value;
@@ -382,14 +374,14 @@ async function onDownloadXls() {
     }
     const ws = wb.Sheets['Export'];
 
-    // Forcer colonne C (index 2) en texte + largeur auto
+    // Colonne C texte + largeur auto
     const ref = ws['!ref'];
     if (ref) {
       const range = XLSX.utils.decode_range(ref);
       const colIdx = 2; // C
       let maxLen = 'code_scanné'.length;
 
-      for (let R = range.s.r + 1; R <= range.e.r; R++) { // +1 header
+      for (let R = range.s.r + 1; R <= range.e.r; R++) {
         const addr = XLSX.utils.encode_cell({ r: R, c: colIdx });
         const cell = ws[addr];
         if (!cell) continue;
@@ -405,9 +397,7 @@ async function onDownloadXls() {
       ws['!cols'] = cols;
     }
 
-    const filename = `inventaire_${from}_au_${to}.xlsx`;
-    XLSX.writeFile(wb, filename);
-
+    XLSX.writeFile(wb, `inventaire_${from}_au_${to}.xlsx`);
     setStatus('Fichier Excel téléchargé ✅ (colonne C en texte)');
   } catch (err) {
     console.error(err);
@@ -415,7 +405,7 @@ async function onDownloadXls() {
   }
 }
 
-/* ---------- Sélection photo -> décodage auto ---------- */
+/* ================== Photo -> décodage automatique ================== */
 function onPhotoPicked(ev){
   const file = ev.target.files && ev.target.files[0];
   if (!file) {
@@ -433,7 +423,6 @@ function onPhotoPicked(ev){
   setTimeout(decodePhoto, 0);
 }
 
-/* ---------- Décodage robuste (BarcodeDetector -> ZXing -> jsQR) ---------- */
 async function decodePhoto(){
   if (!fileBlob) return;
 
@@ -455,20 +444,16 @@ async function decodePhoto(){
       ctx2.drawImage(bitmap, -targetW/2, -targetH/2, targetW, targetH);
       ctx2.restore();
 
-      // petit pré-traitement
       preprocessCanvas(ctx2, w, h);
 
-      // 1) BarcodeDetector (quand dispo)
       const bd = await tryBarcodeDetector(canvasEl);
-      if (bd) { showPreviewFromCanvas(); console.log('Decoded via', bd.engine); onCodeDetected(bd.text); return; }
+      if (bd) { showPreviewFromCanvas(); onCodeDetected(bd.text); return; }
 
-      // 2) ZXing avec hints
       const zx = tryZXingFromCanvas(canvasEl);
-      if (zx) { showPreviewFromCanvas(); console.log('Decoded via', zx.engine); onCodeDetected(zx.text); return; }
+      if (zx) { showPreviewFromCanvas(); onCodeDetected(zx.text); return; }
 
-      // 3) jsQR (fallback)
       const jq = tryJsQRFromCanvas(ctx2, w, h);
-      if (jq) { showPreviewFromCanvas(); console.log('Decoded via', jq.engine); onCodeDetected(jq.text); return; }
+      if (jq) { showPreviewFromCanvas(); onCodeDetected(jq.text); return; }
     }
   }
 
@@ -476,7 +461,7 @@ async function decodePhoto(){
   setStatus('Aucun code détecté. Reprenez la photo (plus net, plus proche, meilleure lumière).');
 }
 
-/* ---------- Envoi backend ---------- */
+/* ================== Envoi backend ================== */
 async function onSubmit(ev) {
   ev.preventDefault();
   const code = (document.getElementById('code')?.value || '').trim();
@@ -509,16 +494,13 @@ async function onSubmit(ev) {
     const data = await res.json().catch(()=> ({}));
     if (data && data.status >= 200 && data.status < 300) {
       setApiMsg('Écrit dans Google Sheets ✅', false);
-
-      // Sauvegarde des valeurs par défaut choisies
       savePersistentDefaults();
-
       if (document.getElementById('date_mvt')?.value === todayISO) {
         todayCount += 1; const el = document.getElementById('count-today'); if (el) el.textContent = String(todayCount);
       } else {
         refreshTodayCount();
       }
-      resetFormUI(); // reset doux (ne touche pas from/to/type)
+      resetFormUI();
     } else {
       setApiMsg(`Erreur API: ${data && data.message ? data.message : 'Inconnue'}`, true);
     }
@@ -528,9 +510,8 @@ async function onSubmit(ev) {
   }
 }
 
-/* ---------- Reset doux + relance auto capture ---------- */
+/* ================== Reset doux + relance auto capture ================== */
 function resetFormUI() {
-  // Ne PAS réinitialiser from/to/type (ils sont persistés)
   const codeEl = document.getElementById('code');      if (codeEl) codeEl.value = '';
   const typeOtherWrap = document.getElementById('field-type-autre');
   const typeAutre = document.getElementById('type_autre');
@@ -560,7 +541,7 @@ function resetFormUI() {
   }
 }
 
-/* ---------- Bouton Test (mock) ---------- */
+/* ================== Bouton Test (mock) ================== */
 function onTest() {
   const codeEl = document.getElementById('code');
   const fromEl = document.getElementById('from');
@@ -577,7 +558,7 @@ function onTest() {
   setStatus('Champs de test remplis. Appuyez sur “Enregistrer”.');
 }
 
-/* ---------- Helpers image / EXIF ---------- */
+/* ================== Helpers image / EXIF ================== */
 async function loadImageWithOrientation(file) {
   if ('createImageBitmap' in window) {
     try {
