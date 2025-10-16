@@ -1,12 +1,11 @@
-// service-worker.js — minimal, scope sur la racine, contrôle immédiat
+// service-worker.js — minimal, scope racine, contrôle immédiat
 const CACHE = 'static-v1';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
-  './manifest.webmanifest',
-  // icônes de base (adapte les chemins réels)
+  './styles.css?v=3',
+  './app.js?v=3',
+  './manifest.webmanifest?v=1',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -19,17 +18,15 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys
-      .filter(k => k !== CACHE).map(k => caches.delete(k))
-    )).then(() => self.clients.claim())
+    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-// Pass-through fetch (facultatif : sert aussi offline basique des assets)
+// pass-through simple (serre les assets si dispo)
 self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (req.method !== 'GET') return;
+  if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(req).then(resp => resp || fetch(req))
+    caches.match(e.request).then(r => r || fetch(e.request))
   );
 });
