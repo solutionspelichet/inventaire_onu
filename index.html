@@ -8,13 +8,22 @@
   <meta name="theme-color" content="#ffffff" />
   <meta name="robots" content="noindex,nofollow" />
 
-  <!-- Thème sans flash : applique le thème stocké (sinon light par défaut via CSS) -->
+  <!-- Empêche l'affichage de tout élément [hidden] (même si un CSS plus loin met display:grid) -->
+  <style>
+    [hidden] { display: none !important; }
+    /* En plus, si on détecte non-iOS Safari dès le <head>, on neutralise la modale */
+    .no-ios-a2hs #ios-a2hs { display: none !important; }
+  </style>
+
+  <!-- Détection très tôt : si pas iOS+Safari, on marque <html> -->
   <script>
     (function() {
-      try {
-        var t = localStorage.getItem('theme');
-        if (t) document.documentElement.setAttribute('data-theme', t);
-      } catch(_) {}
+      var ua = navigator.userAgent || '';
+      var isiOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      var isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+      if (!(isiOS && isSafari)) { document.documentElement.classList.add('no-ios-a2hs'); }
+      // Thème au plus tôt (clair par défaut si rien en storage)
+      try { var t = localStorage.getItem('theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch(_) {}
     })();
   </script>
 
@@ -32,7 +41,7 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=2" />
 
   <!-- Librairies nécessaires -->
   <script defer src="https://unpkg.com/@zxing/library@0.20.0"></script>
@@ -40,7 +49,7 @@
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <!-- App -->
-  <script defer src="app.js"></script>
+  <script defer src="app.js?v=2"></script>
 </head>
 <body>
   <header class="topbar">
@@ -50,9 +59,9 @@
     </div>
 
     <div class="actions-right">
-      <!-- Le bouton est affiché :
-           - sur Android/desktop quand beforeinstallprompt est capturé
-           - sur iOS Safari non installé, pour ouvrir l’aide -->
+      <!-- Bouton “Installer” :
+           - Android/desktop: visible quand beforeinstallprompt capturé (géré par app.js)
+           - iOS Safari non installé: visible pour ouvrir l’aide -->
       <button id="btn-install" class="ghost" aria-label="Installer l’app (PWA)" hidden>Installer</button>
 
       <button id="btn-theme" class="icon-btn" aria-label="Basculer clair/sombre" title="Thème clair/sombre" aria-pressed="false">
@@ -148,7 +157,7 @@
         <div class="actions" style="flex-wrap:wrap">
           <button type="submit">Enregistrer</button>
           <button type="button" id="btn-test" class="ghost">Test (mock)</button>
-          <button type="button" id="btn-clear-defaults" class="ghost" title="Efface les valeurs de départ/destination/type mémorisées">Effacer valeurs par défaut</button>
+          <button type="button" id="btn-clear-defaults" class="ghost" title="Effacer les valeurs de départ/destination/type mémorisées">Effacer valeurs par défaut</button>
         </div>
 
         <p id="api-msg" class="muted" aria-live="polite"></p>
@@ -174,16 +183,27 @@
     <small>© Inventaire ONU — PWA démo • Thème Pelichet</small>
   </footer>
 
-  <!-- Aide iOS Install (jamais auto, seulement via bouton) -->
-  <div id="ios-a2hs" class="ios-a2hs" hidden role="dialog" aria-modal="true" aria-labelledby="ios-a2hs-title">
-    <div class="ios-a2hs-card">
+  <!-- Aide iOS Install (triple-sécurité : hidden + style + fallback onclick) -->
+  <div id="ios-a2hs"
+       class="ios-a2hs"
+       hidden
+       style="display:none"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="ios-a2hs-title"
+       onclick="if(event.target===this){ this.setAttribute('hidden',''); this.style.display='none'; }">
+    <div class="ios-a2hs-card" onclick="event.stopPropagation()">
       <h3 id="ios-a2hs-title">Installer sur iPhone/iPad</h3>
       <ol>
         <li>Ouvrez cette page dans <strong>Safari</strong>.</li>
         <li>Appuyez sur le bouton <strong>Partager</strong> <span class="share-icon" aria-hidden="true">⬆︎</span>.</li>
         <li>Sélectionnez <strong>Ajouter à l’écran d’accueil</strong>.</li>
       </ol>
-      <button id="ios-a2hs-close" class="ghost" type="button">OK</button>
+      <!-- Fallback inline : ferme même si app.js ne charge pas -->
+      <button id="ios-a2hs-close" class="ghost" type="button"
+              onclick="var p=document.getElementById('ios-a2hs'); if(p){ p.setAttribute('hidden',''); p.style.display='none'; }">
+        OK
+      </button>
     </div>
   </div>
 </body>
