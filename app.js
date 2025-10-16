@@ -1,7 +1,14 @@
-/* Inventaire ONU — app.js (photo + export XLS + thème + valeurs persistées + moteur scan renforcé) */
+/* Inventaire ONU — app.js
+ * - Bouton "Installer" : prompt Android/desktop + aide iOS (Safari)
+ * - Thème Pelichet (clair par défaut) + toggle
+ * - Scan photo : BarcodeDetector → ZXing + hints → jsQR (fallback)
+ * - Persistance des champs (from/to/type) + bouton d’effacement
+ * - POST vers Apps Script en x-www-form-urlencoded
+ * - Export XLSX : colonne C texte + largeur auto
+ */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.3.0"; // maj moteur de reconnaissance
+const APP_VERSION = "1.4.0";
 const AUTO_RECAPTURE = true;
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
@@ -9,26 +16,52 @@ let fileBlob = null;
 let todayISO = new Date().toISOString().slice(0,10);
 let todayCount = 0;
 
+/* ===== PWA Install (Android prompt + iOS aide) ===== */
+let deferredPrompt = null;
+
+function isIos() {
+  const ua = window.navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function isSafari() {
+  const ua = window.navigator.userAgent || '';
+  const isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+  return isSafari;
+}
+function isInStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Android/desktop Chrome: intercepter pour déclencher plus tard
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('btn-install');
+  if (btn && !isInStandalone()) btn.hidden = false;
+});
+
 /* ===== Thème clair/sombre ===== */
 function applyTheme(theme) {
   const root = document.documentElement;
   if (theme === 'dark') root.setAttribute('data-theme','dark'); else root.removeAttribute('data-theme');
+  // meta couleur barre adresse
   let meta = document.querySelector('meta[name="theme-color"]');
   if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name','theme-color'); document.head.appendChild(meta); }
   meta.setAttribute('content', theme === 'dark' ? '#121417' : '#f6f8fa');
+  // icônes bouton
   const btn = document.getElementById('btn-theme');
   const sun = document.getElementById('icon-sun');
   const moon = document.getElementById('icon-moon');
   if (btn && sun && moon) {
     const isDark = theme === 'dark';
     btn.setAttribute('aria-pressed', String(isDark));
-    sun.hidden = isDark;  // soleil visible en light
+    sun.hidden = isDark;
     moon.hidden = !isDark;
   }
 }
 function initTheme() {
   const stored = localStorage.getItem('theme');
-  applyTheme(stored || 'light'); // défaut = clair
+  applyTheme(stored || 'light'); // défaut clair
 }
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
@@ -72,7 +105,7 @@ function clearPersistentDefaults() {
   setStatus('Valeurs par défaut effacées.');
 }
 
-/* ===== Détecteurs & hints (moteur renforcé) ===== */
+/* ===== Détecteurs & hints (moteur scan renforcé) ===== */
 const ZX_HINTS = (function(){
   try {
     const hints = new Map();
@@ -144,19 +177,46 @@ function tryJsQRFromCanvas(ctx, w, h) {
   return null;
 }
 
+/* ===== DOM Ready ===== */
 document.addEventListener('DOMContentLoaded', () => {
   // Thème
   initTheme();
   const btnTheme = document.getElementById('btn-theme');
   if (btnTheme) btnTheme.addEventListener('click', toggleTheme);
 
+  // Install button logic (Android prompt / iOS aide)
+  const btnInstall = document.getElementById('btn-install');
+  const iosPanel = document.getElementById('ios-a2hs');
+  const iosClose = document.getElementById('ios-a2hs-close');
+
+  if (btnInstall) {
+    btnInstall.addEventListener('click', async () => {
+      if (isIos() && isSafari() && !isInStandalone()) {
+        if (iosPanel) iosPanel.hidden = false;
+        return;
+      }
+      if (deferredPrompt) {
+        btnInstall.hidden = true;
+        try { await deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch(_) {}
+        deferredPrompt = null;
+      } else {
+        alert('Pour installer : utilisez le menu du navigateur (“Ajouter à l’écran d’accueil”).');
+      }
+    });
+  }
+  if (iosClose && iosPanel) {
+    iosClose.addEventListener('click', () => { iosPanel.hidden = true; });
+    if (isInStandalone()) iosPanel.hidden = true;
+  }
+
+  // Réfs UI
   canvasEl = document.getElementById('canvas');
   ctx = canvasEl.getContext('2d', { willReadFrequently: true });
   statusEl = document.getElementById('status');
   flashEl = document.getElementById('flash');
   previewEl = document.getElementById('preview');
 
-  // Lanceur caméra
+  // Capture photo
   const btnCapture = document.getElementById('btn-capture');
   const photoInput = document.getElementById('photoInput');
   if (btnCapture && photoInput) {
