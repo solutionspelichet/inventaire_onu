@@ -1,10 +1,10 @@
 /* Inventaire ONU — app.js
+ * - Bouton "Installer" : prompt Android/desktop + aide iOS (Safari), jamais auto
  * - Thème Pelichet (clair par défaut) + toggle
  * - Scan photo : BarcodeDetector → ZXing + hints → jsQR (fallback)
  * - Persistance des champs (from/to/type) + bouton d’effacement
  * - POST vers Apps Script en x-www-form-urlencoded
  * - Export XLSX : colonne C texte + largeur auto
- * - PWA Install : Android prompt; iOS panneau d’aide (sur clic seulement) avec fermeture correcte
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
@@ -16,7 +16,7 @@ let fileBlob = null;
 let todayISO = new Date().toISOString().slice(0,10);
 let todayCount = 0;
 
-/* ===== PWA Install (Android prompt + iOS aide SUR CLIC) ===== */
+/* ===== PWA Install (Android prompt + iOS aide) ===== */
 let deferredPrompt = null;
 const IOS_A2HS_DISMISSED_KEY = 'ios_a2hs_dismissed_v1';
 
@@ -26,21 +26,23 @@ function isIos() {
 }
 function isSafari() {
   const ua = window.navigator.userAgent || '';
+  // vrai Safari (pas Chrome/Firefox/Edge iOS)
   return /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
 }
 function isInStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
-// Android/desktop Chrome: capturer l’événement du prompt (jamais d’auto-affichage)
+// Android/desktop Chrome: capturer l’événement du prompt
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
   const btn = document.getElementById('btn-install');
+  // Bouton visible si pas déjà installé
   if (btn && !isInStandalone()) btn.hidden = false;
 });
 
-// Panneau d’aide iOS (jamais auto)
+// Ouvre le panneau iOS (jamais automatiquement, seulement à la demande)
 function openIosA2hsPanel() {
   const panel = document.getElementById('ios-a2hs');
   if (!panel) return;
@@ -48,6 +50,7 @@ function openIosA2hsPanel() {
   const ok = document.getElementById('ios-a2hs-close');
   if (ok) setTimeout(()=>ok.focus(), 0);
 }
+
 function closeIosA2hsPanel(persistDismiss = true) {
   const panel = document.getElementById('ios-a2hs');
   if (!panel) return;
@@ -61,9 +64,11 @@ function closeIosA2hsPanel(persistDismiss = true) {
 function applyTheme(theme) {
   const root = document.documentElement;
   if (theme === 'dark') root.setAttribute('data-theme','dark'); else root.removeAttribute('data-theme');
+  // meta couleur barre adresse
   let meta = document.querySelector('meta[name="theme-color"]');
   if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name','theme-color'); document.head.appendChild(meta); }
   meta.setAttribute('content', theme === 'dark' ? '#121417' : '#f6f8fa');
+  // icônes bouton
   const btn = document.getElementById('btn-theme');
   const sun = document.getElementById('icon-sun');
   const moon = document.getElementById('icon-moon');
@@ -199,37 +204,53 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnTheme = document.getElementById('btn-theme');
   if (btnTheme) btnTheme.addEventListener('click', toggleTheme);
 
-  // Install button logic (Android prompt / iOS aide SUR CLIC, pas d’auto)
+  // Install button logic (Android prompt / iOS aide)
   const btnInstall = document.getElementById('btn-install');
   const iosPanel   = document.getElementById('ios-a2hs');
   const iosClose   = document.getElementById('ios-a2hs-close');
 
+  // Ne jamais ouvrir automatiquement (ni iOS ni Android). On montre le bouton :
+  // - Android/desktop: quand l'événement beforeinstallprompt arrive (voir listener plus haut)
+  // - iOS Safari: on l'affiche pour permettre d'ouvrir l'aide (pas de prompt natif)
+  if (btnInstall && isIos() && isSafari() && !isInStandalone()) {
+    btnInstall.hidden = false;
+  }
+
   if (btnInstall) {
     btnInstall.addEventListener('click', async () => {
-      // iOS Safari non installé → panneau d’aide
+      // iOS Safari : afficher l’aide (pas de prompt Apple)
       if (isIos() && isSafari() && !isInStandalone()) {
         openIosA2hsPanel();
         return;
       }
-      // Android/desktop Chrome → prompt si disponible
+      // Autres plateformes (Android/desktop) : déclencher le prompt natif si capturé
       if (deferredPrompt) {
         btnInstall.hidden = true;
-        try { await deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch(_) {}
+        try {
+          await deferredPrompt.prompt();
+          await deferredPrompt.userChoice; // accepted/dismissed
+        } catch (_) {}
         deferredPrompt = null;
       } else {
         alert('Pour installer : utilisez le menu du navigateur (“Ajouter à l’écran d’accueil”).');
       }
     });
   }
-  // Fermer panneau iOS correctement
+
+  // Fermer correctement le panneau iOS
   if (iosClose) iosClose.addEventListener('click', () => closeIosA2hsPanel(true));
   if (iosPanel) {
-    iosPanel.addEventListener('click', (ev) => { if (ev.target === iosPanel) closeIosA2hsPanel(true); });
-    window.addEventListener('keydown', (ev) => { if (!iosPanel.hidden && ev.key === 'Escape') closeIosA2hsPanel(true); });
-    if (isInStandalone()) iosPanel.hidden = true; // si déjà installé
+    iosPanel.addEventListener('click', (ev) => {
+      if (ev.target === iosPanel) closeIosA2hsPanel(true); // clic sur l’overlay
+    });
+    window.addEventListener('keydown', (ev) => {
+      if (!iosPanel.hidden && ev.key === 'Escape') closeIosA2hsPanel(true);
+    });
+    if (isInStandalone()) iosPanel.hidden = true; // si déjà installé, ne jamais montrer
   }
-  // On n’affiche jamais automatiquement (même si non vu)
-  // const dismissed = localStorage.getItem(IOS_A2HS_DISMISSED_KEY) === '1';
+  // On ne ré-affiche jamais automatiquement (on lit la clé au cas où pour usage futur)
+  const _dismissed = localStorage.getItem(IOS_A2HS_DISMISSED_KEY) === '1';
+  // pas d’action
 
   // Réfs UI
   canvasEl = document.getElementById('canvas');
@@ -272,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (exportTo) exportTo.value = todayISO;
   if (btnXls) btnXls.addEventListener('click', onDownloadXls);
 
-  // Service Worker (installabilité)
+  // Service Worker
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 
   // Compteur + valeurs persistées
@@ -434,7 +455,7 @@ async function decodePhoto(){
       ctx2.drawImage(bitmap, -targetW/2, -targetH/2, targetW, targetH);
       ctx2.restore();
 
-      // Pré-traitement léger (contraste/gamma)
+      // petit pré-traitement
       preprocessCanvas(ctx2, w, h);
 
       // 1) BarcodeDetector (quand dispo)
