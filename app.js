@@ -1,25 +1,24 @@
-/* Inventaire ONU — app.js (v1.6.0)
- * - Android: bouton Installer + prompt natif (fallback notice)
- * - iOS Safari: panneau d’aide manuel uniquement (OK/overlay/Echap ferment)
+/* Inventaire ONU — app.js (v2.0.0 reset stable)
+ * - Android/desktop : bouton Installer visible quand beforeinstallprompt est capturé
+ * - iOS Safari : bouton Installer ouvre une aide (jamais automatique)
  * - Thème Pelichet (clair par défaut) + toggle
  * - Scan photo : BarcodeDetector → ZXing (+hints) → jsQR
- * - Persistance from/to/type + effacer valeurs par défaut
+ * - Persistance from/to/type + effacer valeurs
  * - POST Apps Script + compteur du jour
  * - Export XLSX (col. C texte + largeur auto)
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "2.0.0";
 const AUTO_RECAPTURE = true;
 
-let canvasEl, ctx, statusEl, flashEl, previewEl;
+let canvasEl, statusEl, flashEl, previewEl;
 let fileBlob = null;
 let todayISO = new Date().toISOString().slice(0,10);
 let todayCount = 0;
 
-/* ================== PWA Install (Android prompt + iOS aide) ================== */
+/* ================== Install PWA ================== */
 let deferredPrompt = null;
-const IOS_A2HS_DISMISSED_KEY = 'ios_a2hs_dismissed_v1';
 
 function isIos() {
   const ua = navigator.userAgent || '';
@@ -33,7 +32,6 @@ function isInStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 }
 
-// Android/desktop Chrome: capturer le prompt natif
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
@@ -42,45 +40,30 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 window.addEventListener('appinstalled', () => {
-  console.log('[PWA] installed');
   const btn = document.getElementById('btn-install');
   if (btn) btn.hidden = true;
 });
 
-function openIosA2hsPanel() {
-  const panel = document.getElementById('ios-a2hs');
-  if (!panel) return;
-  panel.hidden = false;
-  const ok = document.getElementById('ios-a2hs-close');
-  if (ok) setTimeout(()=>ok.focus(), 0);
-}
-function closeIosA2hsPanel(persistDismiss = true) {
-  const panel = document.getElementById('ios-a2hs');
-  if (!panel) return;
-  panel.hidden = true;
-  if (persistDismiss) { try { localStorage.setItem(IOS_A2HS_DISMISSED_KEY, '1'); } catch(_) {} }
-}
-
-/* ================== Thème clair/sombre ================== */
+/* ================== Thème ================== */
 function applyTheme(theme) {
   const root = document.documentElement;
   if (theme === 'dark') root.setAttribute('data-theme','dark'); else root.removeAttribute('data-theme');
   let meta = document.querySelector('meta[name="theme-color"]');
   if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name','theme-color'); document.head.appendChild(meta); }
   meta.setAttribute('content', theme === 'dark' ? '#121417' : '#f6f8fa');
-  const btn = document.getElementById('btn-theme');
   const sun = document.getElementById('icon-sun');
   const moon = document.getElementById('icon-moon');
-  if (btn && sun && moon) {
+  const btn = document.getElementById('btn-theme');
+  if (sun && moon && btn) {
     const isDark = theme === 'dark';
-    btn.setAttribute('aria-pressed', String(isDark));
     sun.hidden = isDark;
     moon.hidden = !isDark;
+    btn.setAttribute('aria-pressed', String(isDark));
   }
 }
 function initTheme() {
   const stored = localStorage.getItem('theme');
-  applyTheme(stored || 'light'); // clair par défaut
+  applyTheme(stored || 'light');
 }
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
@@ -89,7 +72,7 @@ function toggleTheme() {
   applyTheme(next);
 }
 
-/* ================== Valeurs persistées (from, to, type) ================== */
+/* ================== Valeurs persistées ================== */
 const PERSIST_KEY = 'inventaire_defaults_v1';
 function loadPersistentDefaults() {
   try {
@@ -123,12 +106,12 @@ function clearPersistentDefaults() {
   setStatus('Valeurs par défaut effacées.');
 }
 
-/* ================== Scan : BarcodeDetector → ZXing + hints → jsQR ================== */
+/* ================== Scan helpers ================== */
 const ZX_HINTS = (function(){
   try {
     const hints = new Map();
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    const formats = [
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
       ZXing.BarcodeFormat.QR_CODE,
       ZXing.BarcodeFormat.CODE_128,
       ZXing.BarcodeFormat.EAN_13,
@@ -136,8 +119,7 @@ const ZX_HINTS = (function(){
       ZXing.BarcodeFormat.ITF,
       ZXing.BarcodeFormat.UPC_A,
       ZXing.BarcodeFormat.UPC_E,
-    ];
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+    ]);
     return hints;
   } catch(_) { return null; }
 })();
@@ -202,27 +184,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnTheme = document.getElementById('btn-theme');
   if (btnTheme) btnTheme.addEventListener('click', toggleTheme);
 
-  // ----- Install button logic (Android prompt / iOS aide) -----
+  // Installer (Android/desktop via beforeinstallprompt ; iOS Safari = aide)
   const btnInstall = document.getElementById('btn-install');
   const iosPanel   = document.getElementById('ios-a2hs');
   const iosClose   = document.getElementById('ios-a2hs-close');
   const iosCard    = document.querySelector('#ios-a2hs .ios-a2hs-card');
 
-  // Sécurité : si ce n’est PAS iOS+Safari, forcer le panneau iOS caché
-  if (iosPanel && !(isIos() && isSafari())) {
-    iosPanel.hidden = true;
-    iosPanel.style.display = ''; // laisser le navigateur gérer hidden
-  }
-
-  // Afficher le bouton sur iOS Safari non installé (ouvre l’aide)
+  // iOS Safari : montrer le bouton pour ouvrir l’aide (si pas déjà installé)
   if (btnInstall && isIos() && isSafari() && !isInStandalone()) {
-    btnInstall.hidden = false;
-  }
-
-  // Afficher également le bouton sur Android-like (fallback) si non installé
-  const isAndroidLike = /Android/i.test(navigator.userAgent);
-  if (btnInstall && isAndroidLike && !isInStandalone()) {
-    // Le listener beforeinstallprompt l’affichera aussi; ici on le montre si le prompt tarde
+    btnInstall.hidden = true; // sera affiché manuellement juste après pour garder le même comportement
     btnInstall.hidden = false;
   }
 
@@ -230,33 +200,32 @@ document.addEventListener('DOMContentLoaded', () => {
     btnInstall.addEventListener('click', async () => {
       // iOS Safari : ouvrir l’aide (pas de prompt Apple)
       if (isIos() && isSafari() && !isInStandalone()) {
-        openIosA2hsPanel();
+        if (iosPanel) iosPanel.hidden = false;
+        if (iosClose) setTimeout(()=>iosClose.focus(), 0);
         return;
       }
       // Android/desktop : prompt natif si capturé
       if (deferredPrompt) {
-        btnInstall.disabled = true;
-        try { await deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch(_) {}
+        try { deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch(_) {}
         deferredPrompt = null;
-        btnInstall.disabled = false;
-        return;
+      } else {
+        alert('Sur Android : ouvrez le menu ⋮ puis “Ajouter à l’écran d’accueil”.');
       }
-      // Fallback Android (pas de prompt dispo)
-      alert('Sur Android : ouvrez le menu ⋮ puis “Ajouter à l’écran d’accueil”.');
     });
   }
 
-  // Fermeture du panneau iOS : OK, clic overlay, Échap — et on bloque la propagation dans la carte
-  if (iosClose) iosClose.addEventListener('click', () => closeIosA2hsPanel(true));
+  // Fermer panneau iOS (OK / clic fond / Échap)
+  if (iosClose) iosClose.addEventListener('click', () => { iosPanel.hidden = true; });
   if (iosPanel) {
-    iosPanel.addEventListener('click', (ev) => { if (ev.target === iosPanel) closeIosA2hsPanel(true); });
-    window.addEventListener('keydown', (ev) => { if (!iosPanel.hidden && ev.key === 'Escape') closeIosA2hsPanel(true); });
+    iosPanel.addEventListener('click', (ev) => { if (ev.target === iosPanel) iosPanel.hidden = true; });
+    window.addEventListener('keydown', (ev) => {
+      if (!iosPanel.hidden && ev.key === 'Escape') iosPanel.hidden = true;
+    });
   }
   if (iosCard) iosCard.addEventListener('click', (e) => e.stopPropagation());
 
-  // Réfs UI scan
+  // Réfs UI
   canvasEl = document.getElementById('canvas');
-  ctx = canvasEl.getContext('2d', { willReadFrequently: true });
   statusEl = document.getElementById('status');
   flashEl = document.getElementById('flash');
   previewEl = document.getElementById('preview');
@@ -330,20 +299,21 @@ function onCodeDetected(text){
   if (codeInput) { codeInput.value = text; codeInput.focus(); }
 }
 
-/* ================== Compteur “Scans aujourd’hui” ================== */
+/* ================== Compteur ================== */
 async function refreshTodayCount() {
   try {
     const res = await fetch(`${API_BASE}?route=/stats&day=${todayISO}`, { method:'GET', mode:'cors', credentials:'omit' });
     const data = await res.json().catch(()=> ({}));
     if (data && data.status === 200 && data.data && typeof data.data.count === 'number') {
-      todayCount = data.data.count;
+      document.getElementById('count-today').textContent = String(data.data.count);
+      return;
     }
   } catch(_) {}
   const el = document.getElementById('count-today');
   if (el) el.textContent = String(todayCount);
 }
 
-/* ================== Export XLS (col. C en texte + largeur auto) ================== */
+/* ================== Export XLSX (col. C texte) ================== */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
   const to   = document.getElementById('export_to')?.value;
@@ -373,7 +343,6 @@ async function onDownloadXls() {
     if (typeof XLSX === 'undefined') { setStatus('Librairie Excel indisponible.'); return; }
 
     const wb = XLSX.read(csvText, { type: 'string', raw: true, cellText: false, cellDates: false });
-
     const first = wb.SheetNames[0];
     if (first !== 'Export') {
       if (wb.Sheets['Export']) { delete wb.Sheets['Export']; const i = wb.SheetNames.indexOf('Export'); if (i>-1) wb.SheetNames.splice(i,1); }
@@ -384,7 +353,7 @@ async function onDownloadXls() {
     }
     const ws = wb.Sheets['Export'];
 
-    // Colonne C texte + largeur auto
+    // Forcer colonne C en texte + largeur auto
     const ref = ws['!ref'];
     if (ref) {
       const range = XLSX.utils.decode_range(ref);
@@ -415,7 +384,7 @@ async function onDownloadXls() {
   }
 }
 
-/* ================== Photo -> décodage automatique ================== */
+/* ================== Photo -> décodage ================== */
 function onPhotoPicked(ev){
   const file = ev.target.files && ev.target.files[0];
   if (!file) {
@@ -426,9 +395,6 @@ function onPhotoPicked(ev){
   const url = URL.createObjectURL(file);
   if (previewEl) { previewEl.src = url; previewEl.style.display = 'block'; }
 
-  const btnCapture = document.getElementById('btn-capture');
-  if (btnCapture) btnCapture.classList.remove('pulse');
-
   setStatus('Décodage en cours…');
   setTimeout(decodePhoto, 0);
 }
@@ -436,18 +402,37 @@ function onPhotoPicked(ev){
 async function decodePhoto(){
   if (!fileBlob) return;
 
-  const {bitmap, width, height} = await loadImageWithOrientation(fileBlob);
+  // Orientation EXIF native si possible
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(fileBlob, { imageOrientation: 'from-image' });
+  } catch {
+    // fallback via <img>
+    const img = await new Promise((res,rej)=>{
+      const u = URL.createObjectURL(fileBlob);
+      const i = new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=u;
+    });
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img,0,0);
+    bitmap = c;
+  }
+
+  const width = bitmap.width || bitmap.canvas?.width;
+  const height = bitmap.height || bitmap.canvas?.height;
   const scales    = [1.0, 0.8, 0.6, 0.45];
   const rotations = [0, 90, 180, 270];
 
+  const canvas = canvasEl;
   for (const scale of scales) {
     for (const rot of rotations) {
       const targetW = Math.max(240, Math.round(width * scale));
       const targetH = Math.max(240, Math.round(height * scale));
-      const {w, h} = sizeAfterRotation(targetW, targetH, rot);
-      canvasEl.width = w; canvasEl.height = h;
+      const w = (rot % 180 === 0) ? targetW : targetH;
+      const h = (rot % 180 === 0) ? targetH : targetW;
+      canvas.width = w; canvas.height = h;
 
-      const ctx2 = canvasEl.getContext('2d', { willReadFrequently: true });
+      const ctx2 = canvas.getContext('2d', { willReadFrequently: true });
       ctx2.save();
       ctx2.translate(w/2, h/2);
       ctx2.rotate(rot * Math.PI/180);
@@ -456,19 +441,26 @@ async function decodePhoto(){
 
       preprocessCanvas(ctx2, w, h);
 
-      const bd = await tryBarcodeDetector(canvasEl);
-      if (bd) { showPreviewFromCanvas(); onCodeDetected(bd.text); return; }
+      const bd = await tryBarcodeDetector(canvas);
+      if (bd) { showPreview(canvas); onCodeDetected(bd.text); return; }
 
-      const zx = tryZXingFromCanvas(canvasEl);
-      if (zx) { showPreviewFromCanvas(); onCodeDetected(zx.text); return; }
+      const zx = tryZXingFromCanvas(canvas);
+      if (zx) { showPreview(canvas); onCodeDetected(zx.text); return; }
 
       const jq = tryJsQRFromCanvas(ctx2, w, h);
-      if (jq) { showPreviewFromCanvas(); onCodeDetected(jq.data || jq.text || jq); return; }
+      if (jq) { showPreview(canvas); onCodeDetected(jq.text); return; }
     }
   }
 
-  showPreviewFromCanvas();
+  showPreview(canvas);
   setStatus('Aucun code détecté. Reprenez la photo (plus net, plus proche, meilleure lumière).');
+}
+
+function showPreview(canvas) {
+  try {
+    const url = canvas.toDataURL('image/png');
+    if (previewEl) { previewEl.src = url; previewEl.style.display = 'block'; }
+  } catch(_) {}
 }
 
 /* ================== Envoi backend ================== */
@@ -504,16 +496,14 @@ async function onSubmit(ev) {
     const data = await res.json().catch(()=> ({}));
     if (data && data.status >= 200 && data.status < 300) {
       setApiMsg('Écrit dans Google Sheets ✅', false);
-
-      // Sauvegarde des valeurs par défaut choisies
       savePersistentDefaults();
-
       if (document.getElementById('date_mvt')?.value === todayISO) {
-        todayCount += 1; const el = document.getElementById('count-today'); if (el) el.textContent = String(todayCount);
+        const el = document.getElementById('count-today');
+        if (el) el.textContent = String((parseInt(el.textContent,10)||0)+1);
       } else {
         refreshTodayCount();
       }
-      resetFormUI(); // reset doux (ne touche pas from/to/type)
+      resetFormUI();
     } else {
       setApiMsg(`Erreur API: ${data && data.message ? data.message : 'Inconnue'}`, true);
     }
@@ -523,9 +513,8 @@ async function onSubmit(ev) {
   }
 }
 
-/* ================== Reset doux + recapture ================== */
 function resetFormUI() {
-  const codeEl = document.getElementById('code');      if (codeEl) codeEl.value = '';
+  const codeEl = document.getElementById('code'); if (codeEl) codeEl.value = '';
   const typeOtherWrap = document.getElementById('field-type-autre');
   const typeAutre = document.getElementById('type_autre');
   if (typeOtherWrap) typeOtherWrap.hidden = (document.getElementById('type')?.value !== 'Autre');
@@ -536,26 +525,23 @@ function resetFormUI() {
   const photoInput = document.getElementById('photoInput'); if (photoInput) { photoInput.value = ''; }
   fileBlob = null;
 
-  setStatus('Saisie enregistrée ✅. Préparation d’un nouveau scan…');
+  setStatus('Saisie enregistrée ✅. Nouvelle photo possible.');
   if (navigator.vibrate) navigator.vibrate(50);
-
-  if (AUTO_RECAPTURE && photoInput) {
-    const btnCapture = document.getElementById('btn-capture');
-    setTimeout(() => {
-      try {
-        photoInput.click();
-        setStatus('Appareil photo ouvert. Cadrez le code et validez la photo.');
-        if (btnCapture) btnCapture.classList.remove('pulse');
-      } catch (e) {
-        setStatus('Touchez “Scanner (photo)” pour une nouvelle prise.');
-        if (btnCapture) btnCapture.classList.add('pulse');
-      }
-    }, 300);
-  }
 }
 
-/* ================== Bouton Test (mock) ================== */
+/* ================== Bouton Test ================== */
 function onTest() {
   const codeEl = document.getElementById('code');
   const fromEl = document.getElementById('from');
-  const toEl = document
+  const toEl = document.getElementById('to');
+  const typeEl = document.getElementById('type');
+  const dateEl = document.getElementById('date_mvt');
+
+  if (codeEl) codeEl.value = 'TEST-QR-123';
+  if (fromEl && !fromEl.value) fromEl.value = 'Voie Creuse';
+  if (toEl && !toEl.value) toEl.value = 'Bibliothèque';
+  if (typeEl && !typeEl.value) { typeEl.value = 'Bureau'; typeEl.dispatchEvent(new Event('change')); }
+  if (dateEl) dateEl.value = todayISO;
+
+  setStatus('Champs de test remplis. Appuyez sur “Enregistrer”.');
+}
