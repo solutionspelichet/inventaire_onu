@@ -1,20 +1,15 @@
-/* Inventaire ONU — app.js (v2.1.0, secret header)
- * - Android/desktop : bouton Installer visible quand beforeinstallprompt est capturé
- * - iOS Safari : bouton Installer ouvre une aide (jamais automatique)
- * - Thème Pelichet (clair par défaut) + toggle
- * - Scan photo : BarcodeDetector → ZXing (+hints) → jsQR
- * - Persistance from/to/type + effacer valeurs
- * - POST Apps Script + compteur du jour
- * - Export XLSX (col. C texte + largeur auto)
- * - Sécurité simple : header X-App-Secret envoyé sur chaque requête
+/* Inventaire ONU — app.js (v2.1.1 anti-preflight)
+ * - Enlève tout header custom pour éviter OPTIONS
+ * - Secret passé en paramètre: x_secret (GET dans l’URL, POST dans le body)
+ * - Le reste inchangé: scan photo, export XLSX (col. C texte), thèmes, etc.
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "2.1.1";
 const AUTO_RECAPTURE = true;
 
-// ⚠️ Renseigne le même secret que dans Apps Script (Script Properties → APP_SECRET)
-const APP_SECRET = "Whatthefuck?"; // <<< MODIFIE-MOI
+// ⚠️ même valeur que dans Apps Script (Script Properties → APP_SECRET)
+const APP_SECRET = "VOTRE_SECRET_TRES_LONG"; // <<< MODIFIE-MOI
 
 let canvasEl, statusEl, flashEl, previewEl;
 let fileBlob = null;
@@ -42,7 +37,6 @@ window.addEventListener('beforeinstallprompt', (e) => {
   const btn = document.getElementById('btn-install');
   if (btn && !isInStandalone()) btn.hidden = false;
 });
-
 window.addEventListener('appinstalled', () => {
   const btn = document.getElementById('btn-install');
   if (btn) btn.hidden = true;
@@ -194,20 +188,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const iosClose   = document.getElementById('ios-a2hs-close');
   const iosCard    = document.querySelector('#ios-a2hs .ios-a2hs-card');
 
-  // iOS Safari : montrer le bouton pour ouvrir l’aide (si pas déjà installé)
   if (btnInstall && isIos() && isSafari() && !isInStandalone()) {
     btnInstall.hidden = false;
   }
-
   if (btnInstall) {
     btnInstall.addEventListener('click', async () => {
-      // iOS Safari : ouvrir l’aide (pas de prompt Apple)
       if (isIos() && isSafari() && !isInStandalone()) {
         if (iosPanel) iosPanel.hidden = false;
         if (iosClose) setTimeout(()=>iosClose.focus(), 0);
         return;
       }
-      // Android/desktop : prompt natif si capturé
       if (deferredPrompt) {
         try { deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch(_) {}
         deferredPrompt = null;
@@ -216,8 +206,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-
-  // Fermer panneau iOS (OK / clic fond / Échap)
   if (iosClose) iosClose.addEventListener('click', () => { iosPanel.hidden = true; });
   if (iosPanel) {
     iosPanel.addEventListener('click', (ev) => { if (ev.target === iosPanel) iosPanel.hidden = true; });
@@ -267,10 +255,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (exportTo) exportTo.value = todayISO;
   if (btnXls) btnXls.addEventListener('click', onDownloadXls);
 
-  // Service Worker
+  // SW
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 
-  // Compteur + valeurs persistées
+  // Compteur + valeurs par défaut
   refreshTodayCount();
   loadPersistentDefaults();
 });
@@ -302,13 +290,11 @@ function onCodeDetected(text){
   if (codeInput) { codeInput.value = text; codeInput.focus(); }
 }
 
-/* ================== Compteur ================== */
+/* ================== Compteur (GET sans header custom) ================== */
 async function refreshTodayCount() {
   try {
-    const res = await fetch(`${API_BASE}?route=/stats&day=${todayISO}`, {
-      method:'GET', mode:'cors', credentials:'omit',
-      headers: { 'X-App-Secret': APP_SECRET }
-    });
+    const url = `${API_BASE}?route=/stats&day=${todayISO}&x_secret=${encodeURIComponent(APP_SECRET)}`;
+    const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
     const data = await res.json().catch(()=> ({}));
     if (data && data.status === 200 && data.data && typeof data.data.count === 'number') {
       document.getElementById('count-today').textContent = String(data.data.count);
@@ -319,7 +305,7 @@ async function refreshTodayCount() {
   if (el) el.textContent = String(todayCount);
 }
 
-/* ================== Export XLSX (col. C texte) ================== */
+/* ================== Export XLSX (GET sans header custom) ================== */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
   const to   = document.getElementById('export_to')?.value;
@@ -329,11 +315,8 @@ async function onDownloadXls() {
   try {
     setStatus('Préparation de l’export…');
 
-    const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-    const res = await fetch(url, {
-      method:'GET', mode:'cors', credentials:'omit',
-      headers: { 'X-App-Secret': APP_SECRET }
-    });
+    const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&x_secret=${encodeURIComponent(APP_SECRET)}`;
+    const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
 
     const ct = res.headers.get('content-type') || '';
     const csvText = await res.text();
@@ -411,12 +394,10 @@ function onPhotoPicked(ev){
 async function decodePhoto(){
   if (!fileBlob) return;
 
-  // Orientation EXIF native si possible
   let bitmap;
   try {
     bitmap = await createImageBitmap(fileBlob, { imageOrientation: 'from-image' });
   } catch {
-    // fallback via <img>
     const img = await new Promise((res,rej)=>{
       const u = URL.createObjectURL(fileBlob);
       const i = new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=u;
@@ -472,7 +453,7 @@ function showPreview(canvas) {
   } catch(_) {}
 }
 
-/* ================== Envoi backend (avec X-App-Secret) ================== */
+/* ================== Envoi backend (POST sans header custom) ================== */
 async function onSubmit(ev) {
   ev.preventDefault();
   const code = (document.getElementById('code')?.value || '').trim();
@@ -493,14 +474,13 @@ async function onSubmit(ev) {
   form.set('type_mobilier_autre', (type === 'Autre') ? typeAutre : '');
   form.set('date_mouvement', date_mvt);
   form.set('source_app_version', APP_VERSION);
+  // secret dans le corps (simple → pas de preflight)
+  form.set('x_secret', APP_SECRET);
 
   try {
     const res = await fetch(`${API_BASE}?route=/items`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'X-App-Secret': APP_SECRET
-      },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
       body: form.toString(),
       mode: 'cors',
       credentials: 'omit'
