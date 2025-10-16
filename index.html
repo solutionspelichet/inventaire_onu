@@ -7,6 +7,12 @@
   <meta name="description" content="PWA Inventaire ONU — scanner et enregistrer des mouvements dans Google Sheets." />
   <meta name="theme-color" content="#ffffff" />
   <meta name="robots" content="noindex,nofollow" />
+  <!-- iOS A2HS metas -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Inventaire ONU">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+
 
   <!-- Thème sans flash : applique le choix stocké (sinon light par défaut via CSS) -->
   <script>
@@ -36,6 +42,21 @@
   <!-- App -->
   <script defer src="app.js"></script>
 </head>
+
+<!-- Aide iOS Install -->
+<div id="ios-a2hs" class="ios-a2hs" hidden role="dialog" aria-modal="true" aria-labelledby="ios-a2hs-title">
+  <div class="ios-a2hs-card">
+    <h3 id="ios-a2hs-title">Installer sur iPhone/iPad</h3>
+    <ol>
+      <li>Ouvrez cette page dans <strong>Safari</strong>.</li>
+      <li>Appuyez sur le bouton <strong>Partager</strong> <span class="share-icon" aria-hidden="true">⬆︎</span>.</li>
+      <li>Sélectionnez <strong>Ajouter à l’écran d’accueil</strong>.</li>
+    </ol>
+    <button id="ios-a2hs-close" class="ghost" type="button">OK</button>
+  </div>
+</div>
+
+  
 <body>
   <header class="topbar">
     <div class="brand">
