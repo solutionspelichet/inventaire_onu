@@ -189,33 +189,34 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnTheme = document.getElementById('btn-theme');
   if (btnTheme) btnTheme.addEventListener('click', toggleTheme);
 
-  // ----- Install button logic -----
+  // ----- Install button logic (Android prompt / iOS aide) -----
   const btnInstall = document.getElementById('btn-install');
   const iosPanel   = document.getElementById('ios-a2hs');
   const iosClose   = document.getElementById('ios-a2hs-close');
   const iosCard    = document.querySelector('#ios-a2hs .ios-a2hs-card');
 
-  // 0) Sécurité : si ce n’est PAS iOS+Safari, on FORCE le panneau iOS caché
+  // Sécurité : si ce n’est PAS iOS+Safari, on garde le panneau caché quoi qu’il arrive
   if (iosPanel && !(isIos() && isSafari())) {
-    iosPanel.hidden = true;
-    // au cas où : retire tout style résiduel pouvant l’afficher
-    iosPanel.style.display = ''; // laisser le navigateur gérer "hidden"
+    iosPanel.hidden = true; // et notre CSS .ios-a2hs[hidden]{display:none!important} garantit l’invisibilité
   }
 
-  // Affichage du bouton :
-  // - Android/desktop : sera affiché par le listener beforeinstallprompt (ci-dessus)
-  // - iOS Safari non installé : on l’affiche ici pour pouvoir ouvrir l’aide
+  // Affichage du bouton Installer :
+  // - Android/desktop : via beforeinstallprompt (listener global plus haut)
+  // - iOS Safari non installé : visible pour ouvrir l’aide
+  if (btnInstall && isIos() && isSafari() && !isInStandalone()) {
+    btnInstall.hidden = false;
+  }
+
   if (btnInstall) {
-    if (isIos() && isSafari() && !isInStandalone()) {
-      btnInstall.hidden = false;
-    }
     btnInstall.addEventListener('click', async () => {
-      // iOS Safari : ouvrir l’aide (jamais le panel sur Android)
+      // iOS Safari : on ouvre l’aide (jamais sur Android)
       if (isIos() && isSafari() && !isInStandalone()) {
-        openIosA2hsPanel();
+        iosPanel.hidden = false;           // montrer
+        const ok = document.getElementById('ios-a2hs-close');
+        if (ok) setTimeout(() => ok.focus(), 0);
         return;
       }
-      // Android/desktop : déclencher le prompt natif si dispo
+      // Android/desktop : prompt natif si capturé
       if (deferredPrompt) {
         btnInstall.hidden = true;
         try {
@@ -228,6 +229,60 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Fermeture du panneau iOS : OK, clic sur fond, Échap
+  function closeIos() { if (iosPanel) iosPanel.hidden = true; }
+  if (iosClose) iosClose.addEventListener('click', closeIos);
+  if (iosPanel) {
+    iosPanel.addEventListener('click', (ev) => { if (ev.target === iosPanel) closeIos(); });
+    window.addEventListener('keydown', (ev) => { if (!iosPanel.hidden && ev.key === 'Escape') closeIos(); });
+  }
+  if (iosCard) { iosCard.addEventListener('click', (e) => e.stopPropagation()); }
+
+  // --- le reste de ton init (scan, formulaire, export, SW, etc.) ---
+  canvasEl = document.getElementById('canvas');
+  ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+  statusEl = document.getElementById('status');
+  flashEl = document.getElementById('flash');
+  previewEl = document.getElementById('preview');
+
+  const btnCapture = document.getElementById('btn-capture');
+  const photoInput = document.getElementById('photoInput');
+  if (btnCapture && photoInput) {
+    btnCapture.addEventListener('click', () => { photoInput.click(); });
+    photoInput.addEventListener('change', onPhotoPicked);
+  }
+
+  const typeSel = document.getElementById('type');
+  const typeOtherWrap = document.getElementById('field-type-autre');
+  if (typeSel && typeOtherWrap) {
+    typeSel.addEventListener('change', () => { typeOtherWrap.hidden = (typeSel.value !== 'Autre'); });
+  }
+  const dateInput = document.getElementById('date_mvt');
+  if (dateInput) dateInput.value = todayISO;
+
+  const form = document.getElementById('form');
+  if (form) form.addEventListener('submit', onSubmit);
+
+  const btnTest = document.getElementById('btn-test');
+  if (btnTest) btnTest.addEventListener('click', onTest);
+
+  const btnClearDefaults = document.getElementById('btn-clear-defaults');
+  if (btnClearDefaults) btnClearDefaults.addEventListener('click', clearPersistentDefaults);
+
+  const exportFrom = document.getElementById('export_from');
+  const exportTo = document.getElementById('export_to');
+  const btnXls = document.getElementById('btn-download-xls');
+  if (exportFrom) exportFrom.value = todayISO;
+  if (exportTo) exportTo.value = todayISO;
+  if (btnXls) btnXls.addEventListener('click', onDownloadXls);
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
+
+  refreshTodayCount();
+  loadPersistentDefaults();
+});
+
 
   // Fermeture du panneau iOS (OK, clic overlay, Échap)
   if (iosClose) iosClose.addEventListener('click', () => closeIosA2hsPanel(true));
