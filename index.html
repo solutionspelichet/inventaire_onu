@@ -5,26 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Inventaire ONU</title>
   <meta name="description" content="PWA Inventaire ONU — scanner et enregistrer des mouvements dans Google Sheets." />
-  <meta name="theme-color" content="#111111" />
+  <meta name="theme-color" content="#ffffff" />
   <meta name="robots" content="noindex,nofollow" />
+
+  <!-- Thème sans flash : applique le choix stocké (sinon light par défaut via CSS) -->
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t) document.documentElement.setAttribute('data-theme', t);
+      } catch(_) {}
+    })();
+  </script>
 
   <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest" />
-<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
-<link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16.png" />
-<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png" />
-<link rel="icon" href="icons/favicon.ico" />
-
-  <script>
-  (function() {
-    try {
-      var t = localStorage.getItem('theme'); // "light" | "dark" | null
-      if (t) document.documentElement.setAttribute('data-theme', t);
-      // sinon, on ne met rien -> light par défaut grâce au CSS
-    } catch(_) {}
-  })();
-</script>
-
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png" />
+  <link rel="icon" href="icons/favicon.ico" />
 
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css" />
@@ -39,32 +38,26 @@
 </head>
 <body>
   <header class="topbar">
-  <div class="brand">
-    <img src="assets/pelichet-logo.png" alt="Pelichet" class="logo" />
+    <div class="brand">
+      <img src="assets/pelichet-logo.png" alt="Pelichet" class="logo" />
+      <h1>Inventaire ONU</h1>
+    </div>
 
-    <h1>Inventaire ONU</h1>
-  </div>
+    <div class="actions-right">
+      <button id="btn-install" class="ghost" aria-label="Installer l’app (PWA)" hidden>Installer</button>
+      <button id="btn-theme" class="icon-btn" aria-label="Basculer clair/sombre" title="Thème clair/sombre" aria-pressed="false">
+        <svg id="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4V2m0 20v-2M4 12H2m20 0h-2M5.64 5.64 4.22 4.22m15.56 15.56-1.42-1.42M5.64 18.36 4.22 19.78m15.56-15.56-1.42 1.42M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z" fill="currentColor"/></svg>
+        <svg id="icon-moon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
 
-  <div class="actions-right">
-    <button id="btn-install" class="ghost" aria-label="Installer l’app (PWA)" hidden>Installer</button>
-
-    <!-- Bouton thème -->
-    <button id="btn-theme" class="icon-btn" aria-label="Basculer clair/sombre" title="Thème clair/sombre" aria-pressed="false">
-      <!-- icône soleil/lune simple -->
-      <svg id="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4V2m0 20v-2M4 12H2m20 0h-2M5.64 5.64 4.22 4.22m15.56 15.56-1.42-1.42M5.64 18.36 4.22 19.78m15.56-15.56-1.42 1.42M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z" fill="currentColor"/></svg>
-      <svg id="icon-moon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" fill="currentColor"/></svg>
-    </button>
-  </div>
-</header>
   <main>
-    <!-- SCAN : uniquement l’icône bouton -->
+    <!-- SCAN -->
     <section class="card">
       <h2>Scanner (mode photo)</h2>
-
-      <!-- Lanceur caméra via icône -->
       <div class="capture-wrap">
         <button id="btn-capture" type="button" class="capture-btn" aria-label="Prendre une photo du code">
-          <!-- Icône code-barres + trait rouge -->
           <svg viewBox="0 0 160 80" aria-hidden="true" class="barcode-icon">
             <rect x="8"  y="12" width="6"  height="56" fill="currentColor" opacity="0.85"/>
             <rect x="18" y="12" width="3"  height="56" fill="currentColor" opacity="0.75"/>
@@ -80,17 +73,13 @@
             <rect x="110" y="12" width="4" height="56" fill="currentColor" opacity="0.7"/>
             <rect x="118" y="12" width="10" height="56" fill="currentColor"/>
             <rect x="132" y="12" width="4" height="56" fill="currentColor" opacity="0.7"/>
-            <!-- trait rouge -->
-            <rect x="0" y="38" width="160" height="4" fill="#ff3b30"/>
+            <rect x="0" y="38" width="160" height="4" fill="#F58220"/>
           </svg>
           <span>Scanner (photo)</span>
         </button>
-
-        <!-- input fichier masqué (ouvre l’appareil photo) -->
         <input id="photoInput" type="file" accept="image/*" capture="environment" class="visually-hidden" />
       </div>
 
-      <!-- Aperçu + canvas -->
       <div id="preview-wrap" class="video-wrap">
         <img id="preview" alt="Aperçu" style="display:none;max-width:100%;height:auto;border-radius:10px;" />
         <canvas id="canvas" class="hidden" aria-hidden="true"></canvas>
@@ -146,16 +135,17 @@
           <input id="date_mvt" name="date_mvt" type="date" required />
         </div>
 
-        <div class="actions">
+        <div class="actions" style="flex-wrap:wrap">
           <button type="submit">Enregistrer</button>
           <button type="button" id="btn-test" class="ghost">Test (mock)</button>
+          <button type="button" id="btn-clear-defaults" class="ghost" title="Efface les valeurs de départ/destination/type mémorisées">Effacer valeurs par défaut</button>
         </div>
 
         <p id="api-msg" class="muted" aria-live="polite"></p>
       </form>
     </section>
 
-    <!-- Stats & Export (placé à la FIN) -->
+    <!-- Stats & Export (fin de page) -->
     <section class="card mini">
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
         <div><strong>Scans aujourd’hui :</strong> <span id="count-today">—</span></div>
@@ -171,7 +161,7 @@
   </main>
 
   <footer class="foot">
-    <small>© Pélichet —</small>
+    <small>© Inventaire ONU — PWA démo • Thème Pelichet</small>
   </footer>
 </body>
 </html>
