@@ -1,7 +1,15 @@
-/* Inventaire ONU — app.js (install Android + aide iOS sûre, thème, scan, export, persistance) */
+/* Inventaire ONU — app.js (v1.6.0)
+ * - Android: bouton Installer + prompt natif (fallback notice)
+ * - iOS Safari: panneau d’aide manuel uniquement (OK/overlay/Echap ferment)
+ * - Thème Pelichet (clair par défaut) + toggle
+ * - Scan photo : BarcodeDetector → ZXing (+hints) → jsQR
+ * - Persistance from/to/type + effacer valeurs par défaut
+ * - POST Apps Script + compteur du jour
+ * - Export XLSX (col. C texte + largeur auto)
+ */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.6.0";
 const AUTO_RECAPTURE = true;
 
 let canvasEl, ctx, statusEl, flashEl, previewEl;
@@ -19,20 +27,24 @@ function isIos() {
 }
 function isSafari() {
   const ua = navigator.userAgent || '';
-  // vrai Safari (pas Chrome/Firefox/Edge iOS)
   return /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
 }
 function isInStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 }
 
-// Android/desktop Chrome: on capture le prompt
+// Android/desktop Chrome: capturer le prompt natif
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
   const btn = document.getElementById('btn-install');
-  // Affiche le bouton uniquement si pas déjà installé
   if (btn && !isInStandalone()) btn.hidden = false;
+});
+
+window.addEventListener('appinstalled', () => {
+  console.log('[PWA] installed');
+  const btn = document.getElementById('btn-install');
+  if (btn) btn.hidden = true;
 });
 
 function openIosA2hsPanel() {
@@ -40,7 +52,7 @@ function openIosA2hsPanel() {
   if (!panel) return;
   panel.hidden = false;
   const ok = document.getElementById('ios-a2hs-close');
-  if (ok) setTimeout(() => ok.focus(), 0);
+  if (ok) setTimeout(()=>ok.focus(), 0);
 }
 function closeIosA2hsPanel(persistDismiss = true) {
   const panel = document.getElementById('ios-a2hs');
@@ -68,7 +80,7 @@ function applyTheme(theme) {
 }
 function initTheme() {
   const stored = localStorage.getItem('theme');
-  applyTheme(stored || 'light');
+  applyTheme(stored || 'light'); // clair par défaut
 }
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
@@ -129,6 +141,7 @@ const ZX_HINTS = (function(){
     return hints;
   } catch(_) { return null; }
 })();
+
 function preprocessCanvas(ctx, w, h) {
   const img = ctx.getImageData(0,0,w,h);
   const d = img.data;
@@ -195,109 +208,51 @@ document.addEventListener('DOMContentLoaded', () => {
   const iosClose   = document.getElementById('ios-a2hs-close');
   const iosCard    = document.querySelector('#ios-a2hs .ios-a2hs-card');
 
-  // Sécurité : si ce n’est PAS iOS+Safari, on garde le panneau caché quoi qu’il arrive
+  // Sécurité : si ce n’est PAS iOS+Safari, forcer le panneau iOS caché
   if (iosPanel && !(isIos() && isSafari())) {
-    iosPanel.hidden = true; // et notre CSS .ios-a2hs[hidden]{display:none!important} garantit l’invisibilité
+    iosPanel.hidden = true;
+    iosPanel.style.display = ''; // laisser le navigateur gérer hidden
   }
 
-  // Affichage du bouton Installer :
-  // - Android/desktop : via beforeinstallprompt (listener global plus haut)
-  // - iOS Safari non installé : visible pour ouvrir l’aide
+  // Afficher le bouton sur iOS Safari non installé (ouvre l’aide)
   if (btnInstall && isIos() && isSafari() && !isInStandalone()) {
+    btnInstall.hidden = false;
+  }
+
+  // Afficher également le bouton sur Android-like (fallback) si non installé
+  const isAndroidLike = /Android/i.test(navigator.userAgent);
+  if (btnInstall && isAndroidLike && !isInStandalone()) {
+    // Le listener beforeinstallprompt l’affichera aussi; ici on le montre si le prompt tarde
     btnInstall.hidden = false;
   }
 
   if (btnInstall) {
     btnInstall.addEventListener('click', async () => {
-      // iOS Safari : on ouvre l’aide (jamais sur Android)
+      // iOS Safari : ouvrir l’aide (pas de prompt Apple)
       if (isIos() && isSafari() && !isInStandalone()) {
-        iosPanel.hidden = false;           // montrer
-        const ok = document.getElementById('ios-a2hs-close');
-        if (ok) setTimeout(() => ok.focus(), 0);
+        openIosA2hsPanel();
         return;
       }
       // Android/desktop : prompt natif si capturé
       if (deferredPrompt) {
-        btnInstall.hidden = true;
-        try {
-          await deferredPrompt.prompt();
-          await deferredPrompt.userChoice;
-        } catch(_) {}
+        btnInstall.disabled = true;
+        try { await deferredPrompt.prompt(); await deferredPrompt.userChoice; } catch(_) {}
         deferredPrompt = null;
-      } else {
-        alert('Pour installer : utilisez le menu du navigateur (“Ajouter à l’écran d’accueil”).');
+        btnInstall.disabled = false;
+        return;
       }
+      // Fallback Android (pas de prompt dispo)
+      alert('Sur Android : ouvrez le menu ⋮ puis “Ajouter à l’écran d’accueil”.');
     });
   }
 
-  // Fermeture du panneau iOS : OK, clic sur fond, Échap
-  function closeIos() { if (iosPanel) iosPanel.hidden = true; }
-  if (iosClose) iosClose.addEventListener('click', closeIos);
-  if (iosPanel) {
-    iosPanel.addEventListener('click', (ev) => { if (ev.target === iosPanel) closeIos(); });
-    window.addEventListener('keydown', (ev) => { if (!iosPanel.hidden && ev.key === 'Escape') closeIos(); });
-  }
-  if (iosCard) { iosCard.addEventListener('click', (e) => e.stopPropagation()); }
-
-  // --- le reste de ton init (scan, formulaire, export, SW, etc.) ---
-  canvasEl = document.getElementById('canvas');
-  ctx = canvasEl.getContext('2d', { willReadFrequently: true });
-  statusEl = document.getElementById('status');
-  flashEl = document.getElementById('flash');
-  previewEl = document.getElementById('preview');
-
-  const btnCapture = document.getElementById('btn-capture');
-  const photoInput = document.getElementById('photoInput');
-  if (btnCapture && photoInput) {
-    btnCapture.addEventListener('click', () => { photoInput.click(); });
-    photoInput.addEventListener('change', onPhotoPicked);
-  }
-
-  const typeSel = document.getElementById('type');
-  const typeOtherWrap = document.getElementById('field-type-autre');
-  if (typeSel && typeOtherWrap) {
-    typeSel.addEventListener('change', () => { typeOtherWrap.hidden = (typeSel.value !== 'Autre'); });
-  }
-  const dateInput = document.getElementById('date_mvt');
-  if (dateInput) dateInput.value = todayISO;
-
-  const form = document.getElementById('form');
-  if (form) form.addEventListener('submit', onSubmit);
-
-  const btnTest = document.getElementById('btn-test');
-  if (btnTest) btnTest.addEventListener('click', onTest);
-
-  const btnClearDefaults = document.getElementById('btn-clear-defaults');
-  if (btnClearDefaults) btnClearDefaults.addEventListener('click', clearPersistentDefaults);
-
-  const exportFrom = document.getElementById('export_from');
-  const exportTo = document.getElementById('export_to');
-  const btnXls = document.getElementById('btn-download-xls');
-  if (exportFrom) exportFrom.value = todayISO;
-  if (exportTo) exportTo.value = todayISO;
-  if (btnXls) btnXls.addEventListener('click', onDownloadXls);
-
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
-
-  refreshTodayCount();
-  loadPersistentDefaults();
-});
-
-
-  // Fermeture du panneau iOS (OK, clic overlay, Échap)
+  // Fermeture du panneau iOS : OK, clic overlay, Échap — et on bloque la propagation dans la carte
   if (iosClose) iosClose.addEventListener('click', () => closeIosA2hsPanel(true));
   if (iosPanel) {
-    iosPanel.addEventListener('click', (ev) => {
-      if (ev.target === iosPanel) closeIosA2hsPanel(true); // clic sur l’overlay
-    });
-    window.addEventListener('keydown', (ev) => {
-      if (!iosPanel.hidden && ev.key === 'Escape') closeIosA2hsPanel(true);
-    });
+    iosPanel.addEventListener('click', (ev) => { if (ev.target === iosPanel) closeIosA2hsPanel(true); });
+    window.addEventListener('keydown', (ev) => { if (!iosPanel.hidden && ev.key === 'Escape') closeIosA2hsPanel(true); });
   }
-  // Empêcher que le clic dans la carte ferme le panel
-  if (iosCard) {
-    iosCard.addEventListener('click', (e) => e.stopPropagation());
-  }
+  if (iosCard) iosCard.addEventListener('click', (e) => e.stopPropagation());
 
   // Réfs UI scan
   canvasEl = document.getElementById('canvas');
@@ -508,7 +463,7 @@ async function decodePhoto(){
       if (zx) { showPreviewFromCanvas(); onCodeDetected(zx.text); return; }
 
       const jq = tryJsQRFromCanvas(ctx2, w, h);
-      if (jq) { showPreviewFromCanvas(); onCodeDetected(jq.text); return; }
+      if (jq) { showPreviewFromCanvas(); onCodeDetected(jq.data || jq.text || jq); return; }
     }
   }
 
@@ -549,13 +504,16 @@ async function onSubmit(ev) {
     const data = await res.json().catch(()=> ({}));
     if (data && data.status >= 200 && data.status < 300) {
       setApiMsg('Écrit dans Google Sheets ✅', false);
+
+      // Sauvegarde des valeurs par défaut choisies
       savePersistentDefaults();
+
       if (document.getElementById('date_mvt')?.value === todayISO) {
         todayCount += 1; const el = document.getElementById('count-today'); if (el) el.textContent = String(todayCount);
       } else {
         refreshTodayCount();
       }
-      resetFormUI();
+      resetFormUI(); // reset doux (ne touche pas from/to/type)
     } else {
       setApiMsg(`Erreur API: ${data && data.message ? data.message : 'Inconnue'}`, true);
     }
@@ -565,7 +523,7 @@ async function onSubmit(ev) {
   }
 }
 
-/* ================== Reset doux + relance auto capture ================== */
+/* ================== Reset doux + recapture ================== */
 function resetFormUI() {
   const codeEl = document.getElementById('code');      if (codeEl) codeEl.value = '';
   const typeOtherWrap = document.getElementById('field-type-autre');
@@ -600,104 +558,4 @@ function resetFormUI() {
 function onTest() {
   const codeEl = document.getElementById('code');
   const fromEl = document.getElementById('from');
-  const toEl = document.getElementById('to');
-  const typeEl = document.getElementById('type');
-  const dateEl = document.getElementById('date_mvt');
-
-  if (codeEl) codeEl.value = 'TEST-QR-123';
-  if (fromEl && !fromEl.value) fromEl.value = 'Voie Creuse';
-  if (toEl && !toEl.value) toEl.value = 'Bibliothèque';
-  if (typeEl && !typeEl.value) { typeEl.value = 'Bureau'; typeEl.dispatchEvent(new Event('change')); }
-  if (dateEl) dateEl.value = todayISO;
-
-  setStatus('Champs de test remplis. Appuyez sur “Enregistrer”.');
-}
-
-/* ================== Helpers image / EXIF ================== */
-async function loadImageWithOrientation(file) {
-  if ('createImageBitmap' in window) {
-    try {
-      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-      return { bitmap: bmp, width: bmp.width, height: bmp.height };
-    } catch (_) { /* fallback */ }
-  }
-  const orientation = await getExifOrientation(file).catch(()=>1);
-  const img = await loadImageElement(file);
-  let bmp;
-  if ('createImageBitmap' in window) {
-    bmp = await createImageBitmap(img);
-  } else {
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
-    c.getContext('2d').drawImage(img, 0, 0);
-    bmp = c;
-  }
-  if (orientation === 1) {
-    return { bitmap: bmp, width: bmp.width || img.naturalWidth, height: bmp.height || img.naturalHeight };
-  }
-  const {canvas, w, h} = drawOriented(bmp, orientation);
-  return { bitmap: canvas, width: w, height: h };
-}
-function sizeAfterRotation(w, h, deg){ return (deg % 180 === 0) ? {w, h} : {w: h, h: w}; }
-function showPreviewFromCanvas() { if (!previewEl) return; try { previewEl.src = canvasEl.toDataURL('image/png'); previewEl.style.display = 'block'; } catch (_) {} }
-
-function loadImageElement(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = url;
-  });
-}
-async function getExifOrientation(file) {
-  const buf = await file.slice(0, 64*1024).arrayBuffer();
-  const view = new DataView(buf);
-  if (view.getUint16(0, false) !== 0xFFD8) return 1;
-  let offset = 2; const length = view.byteLength;
-  while (offset < length) {
-    const marker = view.getUint16(offset, false); offset += 2;
-    if (marker === 0xFFE1) {
-      const app1Len = view.getUint16(offset, false); offset += 2;
-      if (view.getUint32(offset, false) !== 0x45786966) return 1; // 'Exif'
-      offset += 6;
-      const tiff = offset;
-      const little = view.getUint16(tiff, false) === 0x4949;
-      const firstIFD = view.getUint32(tiff+4, little);
-      if (firstIFD < 8) return 1;
-      const dirStart = tiff + firstIFD;
-      const entries = view.getUint16(dirStart, little);
-      for (let i=0; i<entries; i++) {
-        const entry = dirStart + 2 + i*12;
-        const tag = view.getUint16(entry, little);
-        if (tag === 0x0112) {
-          const val = view.getUint16(entry + 8, little);
-          return val || 1;
-        }
-      }
-      return 1;
-    } else if ((marker & 0xFF00) !== 0xFF00) { break; }
-    else { offset += view.getUint16(offset, false); }
-  }
-  return 1;
-}
-function drawOriented(srcBitmap, orientation) {
-  const sw = srcBitmap.width || srcBitmap.canvas?.width;
-  const sh = srcBitmap.height || srcBitmap.canvas?.height;
-  let dw = sw, dh = sh;
-  if ([5,6,7,8].includes(orientation)) { dw = sh; dh = sw; }
-  const canvas = document.createElement('canvas'); canvas.width = dw; canvas.height = dh;
-  const c = canvas.getContext('2d');
-  switch (orientation) {
-    case 2: c.translate(dw, 0); c.scale(-1, 1); break;
-    case 3: c.translate(dw, dh); c.rotate(Math.PI); break;
-    case 4: c.translate(0, dh); c.scale(1, -1); break;
-    case 5: c.rotate(0.5 * Math.PI); c.scale(1, -1); break;
-    case 6: c.rotate(0.5 * Math.PI); c.translate(0, -dh); break;
-    case 7: c.rotate(1.5 * Math.PI); c.scale(1, -1); c.translate(-dw, 0); break;
-    case 8: c.rotate(1.5 * Math.PI); c.translate(-dw, 0); break;
-    default: break;
-  }
-  c.drawImage(srcBitmap, 0, 0, sw, sh);
-  return { canvas, w: dw, h: dh };
-}
+  const toEl = document
