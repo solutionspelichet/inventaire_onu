@@ -1,4 +1,4 @@
-/* Inventaire ONU — app.js (v2.0.0 reset stable)
+/* Inventaire ONU — app.js (v2.1.0, secret header)
  * - Android/desktop : bouton Installer visible quand beforeinstallprompt est capturé
  * - iOS Safari : bouton Installer ouvre une aide (jamais automatique)
  * - Thème Pelichet (clair par défaut) + toggle
@@ -6,11 +6,15 @@
  * - Persistance from/to/type + effacer valeurs
  * - POST Apps Script + compteur du jour
  * - Export XLSX (col. C texte + largeur auto)
+ * - Sécurité simple : header X-App-Secret envoyé sur chaque requête
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.1.0";
 const AUTO_RECAPTURE = true;
+
+// ⚠️ Renseigne le même secret que dans Apps Script (Script Properties → APP_SECRET)
+const APP_SECRET = "Whatthefuck?"; // <<< MODIFIE-MOI
 
 let canvasEl, statusEl, flashEl, previewEl;
 let fileBlob = null;
@@ -192,7 +196,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // iOS Safari : montrer le bouton pour ouvrir l’aide (si pas déjà installé)
   if (btnInstall && isIos() && isSafari() && !isInStandalone()) {
-    btnInstall.hidden = true; // sera affiché manuellement juste après pour garder le même comportement
     btnInstall.hidden = false;
   }
 
@@ -302,7 +305,10 @@ function onCodeDetected(text){
 /* ================== Compteur ================== */
 async function refreshTodayCount() {
   try {
-    const res = await fetch(`${API_BASE}?route=/stats&day=${todayISO}`, { method:'GET', mode:'cors', credentials:'omit' });
+    const res = await fetch(`${API_BASE}?route=/stats&day=${todayISO}`, {
+      method:'GET', mode:'cors', credentials:'omit',
+      headers: { 'X-App-Secret': APP_SECRET }
+    });
     const data = await res.json().catch(()=> ({}));
     if (data && data.status === 200 && data.data && typeof data.data.count === 'number') {
       document.getElementById('count-today').textContent = String(data.data.count);
@@ -324,7 +330,10 @@ async function onDownloadXls() {
     setStatus('Préparation de l’export…');
 
     const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-    const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
+    const res = await fetch(url, {
+      method:'GET', mode:'cors', credentials:'omit',
+      headers: { 'X-App-Secret': APP_SECRET }
+    });
 
     const ct = res.headers.get('content-type') || '';
     const csvText = await res.text();
@@ -463,7 +472,7 @@ function showPreview(canvas) {
   } catch(_) {}
 }
 
-/* ================== Envoi backend ================== */
+/* ================== Envoi backend (avec X-App-Secret) ================== */
 async function onSubmit(ev) {
   ev.preventDefault();
   const code = (document.getElementById('code')?.value || '').trim();
@@ -488,7 +497,10 @@ async function onSubmit(ev) {
   try {
     const res = await fetch(`${API_BASE}?route=/items`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'X-App-Secret': APP_SECRET
+      },
       body: form.toString(),
       mode: 'cors',
       credentials: 'omit'
