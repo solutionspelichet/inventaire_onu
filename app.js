@@ -1,15 +1,16 @@
-/* Inventaire ONU — app.js (v2.1.1 anti-preflight)
- * - Enlève tout header custom pour éviter OPTIONS
- * - Secret passé en paramètre: x_secret (GET dans l’URL, POST dans le body)
- * - Le reste inchangé: scan photo, export XLSX (col. C texte), thèmes, etc.
+/* Inventaire ONU — app.js (v2.2.0 sans secret)
+ * - Android/desktop : bouton Installer quand beforeinstallprompt arrive
+ * - iOS Safari : bouton Installer ouvre une aide (jamais automatique)
+ * - Thème Pelichet (clair par défaut) + toggle
+ * - Scan photo : BarcodeDetector → ZXing (+hints) → jsQR
+ * - Persistance from/to/type + effacer valeurs
+ * - POST Apps Script + compteur du jour
+ * - Export XLSX (col. C texte + largeur auto)
  */
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbwtFL1iaSSdkB7WjExdXYGbQQbhPeIi_7F61pQdUEJK8kSFznjEOU68Fh6U538PGZW2/exec";
-const APP_VERSION = "2.1.1";
+const APP_VERSION = "2.2.0";
 const AUTO_RECAPTURE = true;
-
-// ⚠️ même valeur que dans Apps Script (Script Properties → APP_SECRET)
-const APP_SECRET = "Whatthefuck?"; // <<< MODIFIE-MOI
 
 let canvasEl, statusEl, flashEl, previewEl;
 let fileBlob = null;
@@ -255,10 +256,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (exportTo) exportTo.value = todayISO;
   if (btnXls) btnXls.addEventListener('click', onDownloadXls);
 
-  // SW
+  // Service Worker
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
 
-  // Compteur + valeurs par défaut
+  // Compteur + valeurs persistées
   refreshTodayCount();
   loadPersistentDefaults();
 });
@@ -290,11 +291,10 @@ function onCodeDetected(text){
   if (codeInput) { codeInput.value = text; codeInput.focus(); }
 }
 
-/* ================== Compteur (GET sans header custom) ================== */
+/* ================== Compteur (GET simple) ================== */
 async function refreshTodayCount() {
   try {
-    const url = `${API_BASE}?route=/stats&day=${todayISO}&x_secret=${encodeURIComponent(APP_SECRET)}`;
-    const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
+    const res = await fetch(`${API_BASE}?route=/stats&day=${todayISO}`, { method:'GET', mode:'cors', credentials:'omit' });
     const data = await res.json().catch(()=> ({}));
     if (data && data.status === 200 && data.data && typeof data.data.count === 'number') {
       document.getElementById('count-today').textContent = String(data.data.count);
@@ -305,7 +305,7 @@ async function refreshTodayCount() {
   if (el) el.textContent = String(todayCount);
 }
 
-/* ================== Export XLSX (GET sans header custom) ================== */
+/* ================== Export XLSX (GET simple) ================== */
 async function onDownloadXls() {
   const from = document.getElementById('export_from')?.value;
   const to   = document.getElementById('export_to')?.value;
@@ -315,7 +315,7 @@ async function onDownloadXls() {
   try {
     setStatus('Préparation de l’export…');
 
-    const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&x_secret=${encodeURIComponent(APP_SECRET)}`;
+    const url = `${API_BASE}?route=/export&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
     const res = await fetch(url, { method:'GET', mode:'cors', credentials:'omit' });
 
     const ct = res.headers.get('content-type') || '';
@@ -345,7 +345,7 @@ async function onDownloadXls() {
     }
     const ws = wb.Sheets['Export'];
 
-    // Forcer colonne C en texte + largeur auto
+    // Forcer colonne C (code_scanné) en texte + largeur auto
     const ref = ws['!ref'];
     if (ref) {
       const range = XLSX.utils.decode_range(ref);
@@ -453,7 +453,7 @@ function showPreview(canvas) {
   } catch(_) {}
 }
 
-/* ================== Envoi backend (POST sans header custom) ================== */
+/* ================== Envoi backend (POST simple) ================== */
 async function onSubmit(ev) {
   ev.preventDefault();
   const code = (document.getElementById('code')?.value || '').trim();
@@ -474,8 +474,6 @@ async function onSubmit(ev) {
   form.set('type_mobilier_autre', (type === 'Autre') ? typeAutre : '');
   form.set('date_mouvement', date_mvt);
   form.set('source_app_version', APP_VERSION);
-  // secret dans le corps (simple → pas de preflight)
-  form.set('x_secret', APP_SECRET);
 
   try {
     const res = await fetch(`${API_BASE}?route=/items`, {
